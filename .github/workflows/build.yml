@@ -1,0 +1,119 @@
+name: build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: metadata + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      # Regenerate metadata from the schema dumps + the TrinityCore wiki and
+      # fail if the committed artefacts are stale.
+      - name: Fetch TrinityCore documentation
+        run: npm run metadata:fetch-docs
+
+      - name: Rebuild metadata from the SQL dumps and docs
+        run: npm run metadata
+
+      - name: Check generated metadata is up to date
+        run: |
+          if ! git diff --quiet -- resources/metadata; then
+            echo "::error::resources/metadata is stale — run 'npm run metadata' and commit the result"
+            git diff --stat -- resources/metadata
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  installers:
+    name: ${{ matrix.name }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux installers
+            artifact: linux
+          - os: windows-latest
+            name: windows installers
+            artifact: windows
+          - os: macos-latest
+            name: macos installers
+            artifact: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer and node bundles
+        run: npm run build
+
+      - name: Package desktop installers
+        run: npx electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wyrmrest-editor-${{ matrix.artifact }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

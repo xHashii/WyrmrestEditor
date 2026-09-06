@@ -1,0 +1,59 @@
+appId: org.wyrmrest.editor
+productName: Wyrmrest Editor
+copyright: Wyrmrest Editor contributors
+
+directories:
+  output: release
+  buildResources: build
+
+# The compiled Node side, the renderer bundle and the generated metadata are
+# everything the app needs at runtime.
+files:
+  - dist/node/**/*
+  - dist/renderer/**/*
+  - package.json
+  - '!**/*.map'
+
+extraResources:
+  - from: resources/metadata
+    to: metadata
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: WyrmrestEditor-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Wyrmrest Editor
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: WyrmrestEditor-${version}-mac-${arch}.${ext}
+
+linux:
+  category: Development
+  maintainer: Wyrmrest Editor contributors
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+  artifactName: WyrmrestEditor-${version}-linux-${arch}.${ext}
+
+publish: null

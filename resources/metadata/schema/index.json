@@ -1,0 +1,36 @@
+{
+  "databases": [
+    {
+      "database": "auth",
+      "source": "auth_database.sql",
+      "sourceHash": "92e1a09b1126e0e1",
+      "tableCount": 32,
+      "columnCount": 205,
+      "tablesWithoutPk": 3
+    },
+    {
+      "database": "characters",
+      "source": "characters_database.sql",
+      "sourceHash": "74a06e7a8f70ec40",
+      "tableCount": 107,
+      "columnCount": 815,
+      "tablesWithoutPk": 3
+    },
+    {
+      "database": "world",
+      "source": "world.sql",
+      "sourceHash": "1ae3b0950c5c7348",
+      "tableCount": 251,
+      "columnCount": 2137,
+      "tablesWithoutPk": 18
+    },
+    {
+      "database": "hotfixes",
+      "source": "hotfixes_database.sql",
+      "sourceHash": "13b9c1ebe51b7863",
+      "tableCount": 376,
+      "columnCount": 3840,
+      "tablesWithoutPk": 1
+    }
+  ]
+}

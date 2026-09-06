@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.docs-cache/
+.wyrmrest/
+*.log
+.DS_Store
+.vite/

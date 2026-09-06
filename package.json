@@ -1,0 +1,58 @@
+{
+  "name": "wyrmrest-editor",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Wyrmrest Editor — a TrinityCore 3.4.3 database editor with staged changes and sql/updates export",
+  "author": "Wyrmrest Editor contributors",
+  "license": "GPL-2.0-only",
+  "main": "dist/node/main/main.js",
+  "type": "module",
+  "scripts": {
+    "metadata": "npm run metadata:schema && npm run metadata:views && npm run metadata:docs && npm run metadata:build",
+    "metadata:fetch-docs": "node tools/fetch-docs.mjs",
+    "metadata:schema": "node tools/ingest-schema.mjs",
+    "metadata:views": "node tools/ingest-view-enums.mjs",
+    "metadata:docs": "node tools/ingest-docs.mjs",
+    "metadata:build": "node tools/build-metadata.mjs",
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "dev:electron": "concurrently -k -n vite,electron -c magenta,yellow \"npm:dev:web\" \"npm:electron:start\"",
+    "electron:start": "wait-on tcp:5173 && npm run build:node && cross-env WYRMREST_DEV_SERVER=http://localhost:5173 electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "build": "npm run build:node && npm run build:web",
+    "build:node": "tsc -p tsconfig.node.json && node scripts/copy-assets.mjs",
+    "build:web": "vite build",
+    "start": "node dist/node/server/index.js",
+    "package": "npm run build && electron-builder",
+    "package:dir": "npm run build && electron-builder --dir",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5"
+  },
+  "devDependencies": {
+    "@tanstack/react-virtual": "^3.10.9",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "express": "^4.21.2",
+    "jsdom": "^30.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1",
+    "zustand": "^5.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

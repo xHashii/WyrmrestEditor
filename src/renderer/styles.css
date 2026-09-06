@@ -1298,3 +1298,168 @@ select {
 ::-webkit-scrollbar-thumb:hover {
   background: #33415a;
 }
+
+/* ---------- quick action bar (row / filter shortcuts) ---------- */
+.quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 8px;
+  flex-wrap: wrap;
+}
+.btn-quick {
+  font-size: 12px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.btn-preset {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-style: dashed;
+}
+.quick-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  margin: 0 4px;
+}
+.quick-hint {
+  font-size: 11.5px;
+}
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 16px 8px;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  background: rgba(59, 134, 187, 0.14);
+  border: 1px solid rgba(59, 134, 187, 0.45);
+  color: #b9d8ef;
+  border-radius: 20px;
+  padding: 2px 6px 2px 10px;
+}
+.filter-chip-x {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.filter-chip-x:hover {
+  color: #fff;
+}
+
+/* ---------- connection dialog: profiles + presets ---------- */
+.modal-wide-900 {
+  width: min(920px, 94vw);
+}
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
+}
+.preset-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+.conn-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 10px;
+}
+.conn-profiles {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-content: start;
+  background: rgba(0, 0, 0, 0.18);
+  max-height: 380px;
+  overflow: auto;
+}
+.conn-profiles-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 2px 4px 6px;
+}
+.btn-mini {
+  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.conn-profile {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+.conn-profile:hover {
+  background: var(--bg-hover);
+}
+.conn-profile.active {
+  background: rgba(59, 134, 187, 0.14);
+  border-color: rgba(59, 134, 187, 0.5);
+}
+.conn-profile.connected::after {
+  content: '● live';
+  position: absolute;
+  top: 6px;
+  right: 26px;
+  font-size: 10px;
+  color: #63c98a;
+}
+.conn-profile-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding-right: 30px;
+}
+.conn-profile-host {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.conn-profile-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0.5;
+}
+.conn-profile-del:hover {
+  opacity: 1;
+  color: #e06c75;
+}
+.conn-form .modal-grid {
+  margin: 0;
+}
+.conn-form label.wide-field {
+  display: grid;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+@media (max-width: 720px) {
+  .conn-layout {
+    grid-template-columns: 1fr;
+  }
+}

@@ -74,6 +74,20 @@ CI rebuilds and fails if the committed `resources/metadata` differs.
 
 ## Recently fixed, worth knowing
 
+* **The app was a blank screen in `npm run dev` / `dev:electron`.** The renderer's API client is a
+  module served by Vite at `/api.ts`; the dev proxy used a plain `'/api'` key, and Vite matches a
+  proxy context with `url.startsWith(context)`, so the `/api.ts` module request (and any `/api.ts?…`
+  HMR request) was forwarded to the Express server, which 404'd — every module imports the client, so
+  the whole bundle failed to boot. The shipped/bundled UI never showed it (imports become hashed
+  assets), which is why the bundle-based e2e tests stayed green. The proxy key is now the regex
+  `^/api/`, guarded by `tests/vite-proxy.test.mjs`. If you ever rename the renderer api module or add
+  another proxy prefix, keep it from shadowing a module path.
+* The connection dialog now manages multiple **saved profiles**, has **Quick setup** presets
+  (TrinityCore / Docker-root / AzerothCore), a non-destructive **Test connection** probe
+  (`service.testConnection` → `POST /api/connection/test` / IPC `testConnection`, which never swaps
+  the live source), and a **Disconnect** action. The table view gained a **quick action bar**
+  (duplicate / delete / revert row, filter-by-cell with filter chips) and `Ctrl+I/D/Delete/R`
+  shortcuts; the Electron **Row** menu mirrors them.
 * Switching tables used to paint the new table's columns against the previous table's rows (a flash
   of `NULL`s), and two fast switches could land out of order. `store.ts` now clears `meta`/`result`
   on `openTable` and tags every query with a `queryToken`, discarding superseded responses. The

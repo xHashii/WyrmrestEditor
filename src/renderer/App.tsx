@@ -34,6 +34,10 @@ export function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const meta0 = event.ctrlKey || event.metaKey;
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+
       if (meta0 && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setDialog(useStore.getState().dialog === 'palette' ? null : 'palette');
@@ -41,6 +45,25 @@ export function App() {
       if (meta0 && (event.key.toLowerCase() === 'e' || event.key.toLowerCase() === 's')) {
         event.preventDefault();
         setDialog('export');
+      }
+      // Quick row actions — ignored while typing in a field or when a modal is open.
+      if (meta0 && !typing && !useStore.getState().dialog) {
+        const s = useStore.getState();
+        const key = event.key.toLowerCase();
+        if (key === 'i') {
+          event.preventDefault();
+          void s.addRow();
+        } else if (key === 'd') {
+          event.preventDefault();
+          if (s.selected) void s.duplicateRow(s.selected.rowKey);
+          else s.notify('info', 'Click a cell in the grid first.');
+        } else if (key === 'delete' || key === 'backspace') {
+          event.preventDefault();
+          if (s.selected) void s.deleteRow(s.selected.rowKey);
+        } else if (key === 'r') {
+          event.preventDefault();
+          if (s.selected) void s.revertRow(s.selected.rowKey);
+        }
       }
       if (event.key === 'Escape') setDialog(null);
     };
@@ -51,8 +74,13 @@ export function App() {
   useEffect(() => {
     if (!isDesktop()) return;
     return window.wyrmrest?.onMenu((action) => {
+      const s = useStore.getState();
       if (action === 'export') setDialog('export');
       if (action === 'settings') setDialog('connection');
+      if (action === 'new-row') void s.addRow();
+      if (action === 'duplicate-row' && s.selected) void s.duplicateRow(s.selected.rowKey);
+      if (action === 'delete-row' && s.selected) void s.deleteRow(s.selected.rowKey);
+      if (action === 'revert-row' && s.selected) void s.revertRow(s.selected.rowKey);
     });
   }, [setDialog]);
 

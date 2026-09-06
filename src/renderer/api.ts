@@ -62,6 +62,8 @@ export const api = {
     call<TableMeta>('getTable', `metadata/${database}/${table}`, [database, table]),
   getStatus: () => call<ConnectionStatus>('getStatus', 'status'),
   connect: (profile: ConnectionProfile) => call<ConnectionStatus>('connect', 'connect', [profile], profile),
+  testConnection: (profile: ConnectionProfile) =>
+    call<ConnectionStatus>('testConnection', 'connection/test', [profile], profile),
   useDemo: () => call<ConnectionStatus>('useDemo', 'demo', [], {}),
   disconnect: () => call<ConnectionStatus>('disconnect', 'disconnect', [], {}),
   query: (request: QueryRequest) => call<QueryResult>('query', 'query', [request], request),

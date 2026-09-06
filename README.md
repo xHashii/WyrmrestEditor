@@ -97,7 +97,7 @@ npm run metadata:fetch-docs   # clone the wiki at the commit pinned in tools/doc
 npm run metadata              # schema → views → docs → resources/metadata (deterministic)
 npm run typecheck
 npm run build                 # dist/node + dist/renderer
-npm test                      # 22 tests
+npm test                      # 25 tests
 npm run package               # electron-builder installers into release/
 ```
 
@@ -109,12 +109,40 @@ Curated knowledge that the wiki cannot give us (extra reference targets, correct
 in `tools/overlay/index.mjs`; the builder fails loudly if an overlay entry points at a table or
 column that does not exist in the dumps.
 
+## Connecting
+
+Click the connection chip in the top bar (or **File → Connection settings…**) to open the connection
+dialog. It gives you:
+
+* **Quick setups** — one-click presets for a local TrinityCore (`trinity@127.0.0.1:3306`), a
+  Docker/root MySQL, and AzerothCore (`acore_*` schema names);
+* **Saved servers** — a list of named connection profiles you can add to and delete from; the active
+  profile is remembered and reconnected on the next launch;
+* **Test connection** — probes every configured schema without leaving the dialog or disturbing the
+  current session, reporting the table count or the exact MySQL error per database;
+* **Demo data / Disconnect** — drop back to the built-in sample at any time.
+
+## Quick actions
+
+A toolbar above the grid puts the common spreadsheet-style row operations one click away:
+
+* **⧉ Duplicate row** — copies the selected row and stages the copy as a new row (integer primary
+  keys are bumped to a free value; auto-increment keys are left to the server);
+* **🗑 Delete row** — stages the selected row for deletion;
+* **↺ Revert row** — discards every staged change on the selected row;
+* **⚡ Filter by cell** — instantly narrows the page to rows matching the selected cell
+  (`= value`, or `IS NULL` for an empty cell); active filters show as removable chips.
+
 ## Keyboard
 
 | | |
 | --- | --- |
 | `Ctrl/Cmd + K` | command palette (jump to any of the 766 tables) |
 | `Ctrl/Cmd + S` / `Ctrl/Cmd + E` | open the export dialog |
+| `Ctrl/Cmd + I` | stage a new empty row |
+| `Ctrl/Cmd + D` | duplicate the selected row |
+| `Ctrl/Cmd + Delete` | delete the selected row |
+| `Ctrl/Cmd + R` | revert staged changes on the selected row |
 | arrows, `Tab`, `PageUp/Down`, `Home/End` | move around the grid |
 | `Enter` / `F2` / double-click | edit the selected cell (`Esc` cancels, `Enter` stages) |
 | `Esc` | close the current dialog |

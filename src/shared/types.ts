@@ -298,6 +298,7 @@ export interface WyrmrestApi {
   getTable(database: DatabaseName, table: string): Promise<TableMeta>;
   getStatus(): Promise<ConnectionStatus>;
   connect(profile: ConnectionProfile): Promise<ConnectionStatus>;
+  testConnection(profile: ConnectionProfile): Promise<ConnectionStatus>;
   useDemo(): Promise<ConnectionStatus>;
   disconnect(): Promise<ConnectionStatus>;
   query(request: QueryRequest): Promise<QueryResult>;

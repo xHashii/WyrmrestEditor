@@ -28,6 +28,7 @@ app.get('/api/metadata', wrap(async () => service.getIndex()));
 app.get('/api/metadata/:database/:table', wrap(async (req) => service.getTable(req.params.database as never, String(req.params.table))));
 app.get('/api/status', wrap(async () => service.getStatus()));
 app.post('/api/connect', wrap(async (req) => service.connect(req.body)));
+app.post('/api/connection/test', wrap(async (req) => service.testConnection(req.body)));
 app.post('/api/demo', wrap(async () => service.useDemo()));
 app.post('/api/disconnect', wrap(async () => service.disconnect()));
 app.post('/api/query', wrap(async (req) => service.query(req.body)));

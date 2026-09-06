@@ -22,6 +22,7 @@ import type {
   TableMeta,
   WyrmrestApi,
 } from '../shared/types.js';
+import { DATABASES } from '../shared/types.js';
 
 /**
  * The application service — one object implementing the whole API surface.
@@ -42,6 +43,34 @@ export class WyrmrestService implements WyrmrestApi {
 
   async getStatus(): Promise<ConnectionStatus> {
     return this.source.status();
+  }
+
+  /**
+   * Try a profile without making it active. Never touches `this.source`, so a
+   * failed (or successful) probe leaves the running session untouched.
+   */
+  async testConnection(profile: ConnectionProfile): Promise<ConnectionStatus> {
+    try {
+      return await MySqlDataSource.probe(profile);
+    } catch (err) {
+      const message = (err as Error).message;
+      // Report every configured schema as unavailable (rather than leaking
+      // demo-mode "available" pills) so the dialog shows what failed.
+      const databases: ConnectionStatus['databases'] = {};
+      for (const db of DATABASES) {
+        databases[db] = profile.databases[db]
+          ? { available: false, tables: 0, error: message }
+          : { available: false, tables: 0, error: 'not configured' };
+      }
+      return {
+        mode: 'live',
+        connected: false,
+        profile: { id: profile.id, name: profile.name, host: profile.host, port: profile.port, user: profile.user, databases: profile.databases },
+        serverVersion: null,
+        message: `Could not connect: ${message}`,
+        databases,
+      };
+    }
   }
 
   async connect(profile: ConnectionProfile): Promise<ConnectionStatus> {

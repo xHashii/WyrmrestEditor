@@ -77,6 +77,13 @@ interface State {
   stageEdit(rowKey: string, column: string, value: CellValue): Promise<void>;
   addRow(): Promise<void>;
   deleteRow(rowKey: string): Promise<void>;
+  /** Stage a copy of the selected (or a given) row as a new insert. */
+  duplicateRow(rowKey?: string): Promise<void>;
+  /** Remove every staged change for one row. */
+  revertRow(rowKey: string): Promise<void>;
+  /** Add a quick equality (or NULL / bit) filter from a cell value. */
+  filterByCell(rowKey: string, column: string): Promise<void>;
+  clearFilters(): void;
   revert(ids: string[]): Promise<void>;
   refreshLedger(): Promise<void>;
   applyToDatabase(ids?: string[]): Promise<void>;
@@ -336,6 +343,110 @@ export const useStore = create<State>((set, get) => ({
     } catch (err) {
       get().notify('error', (err as Error).message);
     }
+  },
+
+  async duplicateRow(rowKey) {
+    const { meta, database, tableName, selected } = get();
+    if (!meta || !tableName) return;
+    if (meta.readOnly) {
+      get().notify('error', `${meta.label} is read-only`);
+      return;
+    }
+    const targetKey = rowKey ?? selected?.rowKey;
+    const target = gridRows(get()).find((r) => r.key === targetKey);
+    if (!target) {
+      get().notify('info', 'Select a row to duplicate first');
+      return;
+    }
+    // Start from the row as currently shown (staged edits included).
+    const values: Row = {};
+    for (const col of meta.columns) values[col.name] = displayValue(target, col.name);
+
+    // Nudge the identity so the copy does not collide with the source row:
+    // auto-increment ids are left to the server (0), other key columns get a
+    // one-up over the highest value already on this page.
+    const insertCount = get().ledger.filter((c) => c.table === tableName && c.kind === 'insert').length;
+    const key: Record<string, CellValue> = {};
+    for (const column of meta.identityColumns) {
+      const col = meta.columns.find((c) => c.name === column)!;
+      if (col.autoIncrement) {
+        key[column] = 0;
+        values[column] = 0;
+      } else if (col.kind === 'integer' || col.kind === 'float') {
+        const pageValues = gridRows(get())
+          .map((r) => Number(displayValue(r, column)))
+          .filter((n) => Number.isFinite(n));
+        const next = (pageValues.length ? Math.max(...pageValues) : 0) + insertCount + 1;
+        key[column] = next;
+        values[column] = next;
+      } else {
+        const base = String(values[column] ?? '');
+        const copy = `${base} copy`;
+        key[column] = copy;
+        values[column] = copy;
+      }
+    }
+
+    try {
+      const state = await api.stage({
+        kind: 'insert',
+        database,
+        table: tableName,
+        key,
+        values: Object.fromEntries(
+          meta.columns.map((c) => [c.name, { before: null, after: values[c.name] ?? null }]),
+        ),
+        snapshot: values,
+        note: `Duplicated ${meta.label} row`,
+      });
+      set({ ledger: state.changes, showLedger: true });
+      get().notify('success', 'Copy staged as a new row — adjust its key, nothing is written yet.');
+    } catch (err) {
+      get().notify('error', (err as Error).message);
+    }
+  },
+
+  async revertRow(rowKey) {
+    const { database, tableName } = get();
+    const target = gridRows(get()).find((r) => r.key === rowKey);
+    const ids: string[] = [];
+    if (target?.change) ids.push(target.change.id);
+    // A staged insert can also be hiding the change for its provisional key.
+    for (const change of get().ledger) {
+      if (change.database !== database || change.table !== tableName) continue;
+      const k = Object.entries(change.key)
+        .map(([k2, v]) => `${k2}=${v ?? 'NULL'}`)
+        .join('&');
+      if (k === rowKey && !ids.includes(change.id)) ids.push(change.id);
+    }
+    if (!ids.length) return;
+    const state = await api.revert(ids);
+    set({ ledger: state.changes });
+    void get().refresh();
+  },
+
+  async filterByCell(rowKey, column) {
+    const { meta, filters } = get();
+    if (!meta) return;
+    const target = gridRows(get()).find((r) => r.key === rowKey);
+    if (!target) return;
+    const value = displayValue(target, column);
+    const clause: FilterClause =
+      value === null || value === undefined || value === ''
+        ? { column, op: 'isNull' }
+        : { column, op: '=', value };
+    // Replace an existing quick-filter on the same column rather than stacking.
+    const next = filters.filter((f) => f.column !== column);
+    next.push(clause);
+    set({ filters: next, offset: 0 });
+    void get().refresh();
+    get().notify('info', `Filtered by ${column}${value === null || value === undefined ? ' IS NULL' : ` = ${value}`}`);
+  },
+
+  clearFilters() {
+    if (!get().filters.length) return;
+    set({ filters: [], offset: 0 });
+    void get().refresh();
   },
 
   async revert(ids) {

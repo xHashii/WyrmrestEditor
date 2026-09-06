@@ -18,7 +18,12 @@ export default defineConfig({
     allowedHosts: true,
     cors: true,
     proxy: {
-      '/api': {
+      // Regex so we proxy /api/<route> but NOT /api.ts — the renderer's own
+      // API-client module is served by Vite as /api.ts; a plain '/api' prefix
+      // match (url.startsWith('/api')) swallowed that module request and
+      // forwarded it to the API server, which 404s, so the whole app failed
+      // to boot in dev / Electron-dev.
+      '^/api/': {
         target: process.env.WYRMREST_API ?? 'http://127.0.0.1:8787',
         changeOrigin: true,
       },

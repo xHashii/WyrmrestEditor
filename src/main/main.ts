@@ -72,6 +72,31 @@ function buildMenu(): void {
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
+    {
+      label: 'Row',
+      submenu: [
+        {
+          label: 'New row',
+          accelerator: 'CmdOrCtrl+I',
+          click: () => mainWindow?.webContents.send('wyrmrest:menu', 'new-row'),
+        },
+        {
+          label: 'Duplicate selected row',
+          accelerator: 'CmdOrCtrl+D',
+          click: () => mainWindow?.webContents.send('wyrmrest:menu', 'duplicate-row'),
+        },
+        {
+          label: 'Delete selected row',
+          accelerator: 'CmdOrCtrl+Backspace',
+          click: () => mainWindow?.webContents.send('wyrmrest:menu', 'delete-row'),
+        },
+        {
+          label: 'Revert selected row',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => mainWindow?.webContents.send('wyrmrest:menu', 'revert-row'),
+        },
+      ],
+    },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -118,6 +143,7 @@ const handlers: Record<string, Handler> = {
   getTable: (database: never, table: string) => service.getTable(database, table),
   getStatus: () => service.getStatus(),
   connect: (profile: never) => service.connect(profile),
+  testConnection: (profile: never) => service.testConnection(profile),
   useDemo: () => service.useDemo(),
   disconnect: () => service.disconnect(),
   query: (request: never) => service.query(request),

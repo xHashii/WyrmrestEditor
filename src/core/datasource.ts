@@ -162,6 +162,18 @@ export class MySqlDataSource implements DataSource {
     this.statusValue = status;
   }
 
+  /**
+   * Probe a profile without making it the live source: connect, report the
+   * per-database status, then close everything. Powers the "Test connection"
+   * button so a bad profile never disturbs the current session.
+   */
+  static async probe(profile: ConnectionProfile): Promise<ConnectionStatus> {
+    const source = await MySqlDataSource.connect(profile);
+    const status = source.status();
+    await source.close();
+    return status;
+  }
+
   static async connect(profile: ConnectionProfile): Promise<MySqlDataSource> {
     const mysql = await import('mysql2/promise');
     const status: ConnectionStatus = {

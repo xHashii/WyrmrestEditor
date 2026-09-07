@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from './api';
+import type { SmartData } from '../shared/smart';
+import type { SearchScope } from '../shared/search';
 import { defaultRow, identityKey, insertKey, integerValue, keyValues, parseCellValue, sameValue, valueText } from '../shared/values';
 import type {
   AppSettings, CatalogueEntry, CellValue, ConnectionStatus, DatabaseName, EntityMeta, FilterClause,
@@ -7,6 +9,16 @@ import type {
 } from '../shared/types';
 
 export interface CellAddress { rowKey: string; column: string }
+export type SmartView = 'grid' | 'script';
+export interface SmartViewState {
+  view: SmartView;
+  /** Script being edited in the visual editor, null when none is selected. */
+  entryorguid: string | null;
+  sourceType: number | null;
+  /** Resolved name of the scripted creature/spell/…, for titles and comments. */
+  subject: string | null;
+}
+const NO_SCRIPT: SmartViewState = { view: 'grid', entryorguid: null, sourceType: null, subject: null };
 export interface GridRow { key: string; row: Row; origin: 'db' | 'staged-insert'; change: StagedChange | null; ambiguous?: boolean }
 
 interface State {
@@ -28,6 +40,10 @@ interface State {
   queryError: string | null;
   editError: string | null;
   search: string;
+  searchScope: SearchScope;
+  smart: SmartViewState;
+  smartData: SmartData | null;
+  smartDataError: string | null;
   filters: FilterClause[];
   orderBy: { column: string; direction: 'asc' | 'desc' }[];
   offset: number;
@@ -50,6 +66,16 @@ interface State {
   openTable(database: DatabaseName, table: string): Promise<void>;
   refresh(): Promise<void>;
   setSearch(value: string): void;
+  setSearchScope(scope: SearchScope): void;
+  ensureSmartData(): Promise<SmartData | null>;
+  setSmartView(view: SmartView): Promise<void>;
+  selectScript(entryorguid: string, sourceType: number, subject?: string | null): Promise<void>;
+  /** Cache display names for these ids of one entity (SmartAI chips, spell areas). */
+  resolveNamesFor(entity: string, ids: (string | number)[]): Promise<void>;
+  clearScript(): void;
+  stageValues(rowKey: string, values: Record<string, CellValue>, note?: string): Promise<boolean>;
+  /** Stages a fully specified row; resolves to its row key, or null when nothing was staged. */
+  stageNewRowWith(values: Row, note: string): Promise<string | null>;
   setFilters(filters: FilterClause[]): void;
   toggleSort(column: string): void;
   setOffset(offset: number): void;
@@ -126,7 +152,7 @@ async function proposeKey(meta: TableMeta, row: Row): Promise<Row> {
   return next;
 }
 
-async function stageNewRow(meta: TableMeta, values: Row, note: string) {
+async function stageNewRow(meta: TableMeta, values: Row, note: string): Promise<string | null> {
   const before = new Set(useStore.getState().ledger.map((c) => c.id));
   const state = await api.stage({ kind: 'insert', database: meta.database, table: meta.name, key: insertKey(meta, values),
     values: Object.fromEntries(Object.entries(values).map(([key, after]) => [key, { before: null, after }])), snapshot: values, note });
@@ -137,13 +163,14 @@ async function stageNewRow(meta: TableMeta, values: Row, note: string) {
     current.select({ rowKey: `insert:${created.id}`, column: meta.identityColumns[0] ?? meta.columns[0].name });
   }
   current.notify('success', 'New row staged. Review its key and values before exporting; nothing has been written to the database.');
+  return created ? `insert:${created.id}` : null;
 }
 
 export const useStore = create<State>((set, get) => ({
   ready: false, error: null, index: null, entities: {}, catalogue: [], status: null, settings: null,
   database: 'world', tableName: null, meta: null, result: null,
   navigationToken: 0, queryToken: 0, sourceToken: 0, loading: false, queryError: null, editError: null,
-  search: '', filters: [], orderBy: [], offset: 0,
+  search: '', searchScope: 'all', smart: NO_SCRIPT, smartData: null, smartDataError: null, filters: [], orderBy: [], offset: 0,
   ledger: [], ledgerUpdatedAt: '', pendingMutations: 0, names: {}, selected: null, editing: null,
   showSidebar: true, showDocs: true, showLedger: false, lastTables: {}, dialog: null, exportIds: undefined, toast: null,
 
@@ -173,12 +200,14 @@ export const useStore = create<State>((set, get) => ({
     clearTimeout(searchTimer);
     const token = get().navigationToken + 1;
     set({ database, tableName, meta: null, result: null, loading: true, queryError: null, editError: null,
-      navigationToken: token, queryToken: get().queryToken + 1, offset: 0, search: '', filters: [], orderBy: [], selected: null, editing: null,
-      lastTables: { ...get().lastTables, [database]: tableName } });
+      navigationToken: token, queryToken: get().queryToken + 1, offset: 0, search: '', searchScope: get().searchScope, filters: [], orderBy: [], selected: null, editing: null,
+      smart: NO_SCRIPT, lastTables: { ...get().lastTables, [database]: tableName } });
     try {
       const meta = await api.getTable(database, tableName);
       if (get().navigationToken !== token) return;
       set({ meta });
+      // The script editor needs its definition data before it can open.
+      if (database === 'world' && tableName === 'smart_scripts') void get().ensureSmartData();
       await get().refresh();
     } catch (err) {
       if (get().navigationToken !== token) return;
@@ -194,7 +223,13 @@ export const useStore = create<State>((set, get) => ({
     const token = get().queryToken + 1;
     set({ loading: true, queryError: null, queryToken: token });
     try {
-      const result = await api.query({ database, table: tableName, search: search || undefined, filters, orderBy, offset, limit: settings?.pageSize ?? 100 });
+      const scripted = get().smart.view === 'script' && get().smart.entryorguid !== null;
+      const result = await api.query({
+        database, table: tableName, search: search || undefined, searchScope: get().searchScope, filters, orderBy, offset,
+        // A script is read and written as a whole, so the script view pulls one
+        // complete page (the service caps it at 500 rows) instead of a slice.
+        limit: scripted ? 500 : settings?.pageSize ?? 100,
+      });
       if (get().queryToken !== token) return;
       if (result.total !== null && offset > 0 && !result.rows.length) {
         set({ offset: Math.max(0, Math.ceil(result.total / result.limit) - 1) * result.limit });
@@ -216,6 +251,51 @@ export const useStore = create<State>((set, get) => ({
     set({ search, offset: 0, loading: Boolean(get().meta), queryToken: get().queryToken + 1 });
     searchTimer = setTimeout(() => void get().refresh(), 250);
   },
+  setSearchScope(searchScope) {
+    set({ searchScope, offset: 0 });
+    if (get().search.trim()) void get().refresh();
+  },
+  async ensureSmartData() {
+    const current = get();
+    if (current.smartData) return current.smartData;
+    set({ smartDataError: null });
+    try {
+      const data = await api.getSmartData();
+      set({ smartData: data });
+      return data;
+    } catch (err) {
+      set({ smartDataError: (err as Error).message });
+      return null;
+    }
+  },
+  async setSmartView(view) {
+    const state = get();
+    if (state.smart.view === view) return;
+    if (view === 'script') {
+      const data = await state.ensureSmartData();
+      if (!data) { state.notify('error', state.smartDataError ?? 'SmartAI definitions could not be loaded.'); return; }
+      set({ smart: { ...state.smart, view } });
+      return;
+    }
+    set({ smart: { ...get().smart, view: 'grid' }, offset: 0 });
+    void get().refresh();
+  },
+  async selectScript(entryorguid, sourceType, subject) {
+    const { meta, database, tableName } = get();
+    if (!meta || meta.database !== database || meta.name !== tableName) return;
+    set({
+      smart: { view: 'script', entryorguid, sourceType, subject: subject ?? null },
+      filters: [{ column: 'entryorguid', op: '=', value: entryorguid }, { column: 'source_type', op: '=', value: sourceType }],
+      orderBy: [{ column: 'id', direction: 'asc' }],
+      offset: 0, search: '', selected: null, editing: null,
+    });
+    await get().refresh();
+    await get().resolvePageNames();
+  },
+  clearScript() {
+    set({ smart: { ...get().smart, entryorguid: null, sourceType: null, subject: null }, filters: [], orderBy: [], offset: 0 });
+    void get().refresh();
+  },
   setFilters(filters) { set({ filters, offset: 0 }); void get().refresh(); },
   toggleSort(column) {
     const current = get().orderBy[0];
@@ -233,35 +313,81 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async stageEdit(rowKey, column, value) {
-    const { meta, database, tableName, editing, editError } = get();
+    const { editing, editError } = get();
+    const success = await get().stageValues(rowKey, { [column]: value });
+    if (success && get().editing === editing) set({ editing: null, editError: null });
+    if (editError && get().toast?.message === editError) set({ toast: null });
+    return success;
+  },
+
+  /**
+   * Stage several columns of one row in a single ledger entry. The SmartAI
+   * editor needs this: choosing an action can rewrite `action_type`, every
+   * `action_param` and the comment at once, and that must land as one change.
+   */
+  async stageValues(rowKey, values, note) {
+    const { meta, database, tableName } = get();
     if (!meta || !tableName || meta.readOnly) return false;
     const target = gridRows(get()).find((r) => r.key === rowKey);
     if (!target || target.change?.kind === 'delete' || target.ambiguous) return false;
+    const changes: Record<string, { before: CellValue; after: CellValue }> = {};
     try {
-      const columnMeta = meta.columns.find((c) => c.name === column);
-      if (!columnMeta) throw new Error(`Unknown column ${column}`);
-      const after = parseCellValue(columnMeta, value);
-      // Compare with what is displayed, not the original, so an edit back to
-      // the original actually reaches the ledger and cancels the delta.
-      if (!sameValue(displayValue(target, column), after)) {
-        await mutation(async () => {
-          const snapshot = target.origin === 'staged-insert' ? { ...target.row, [column]: after } : undefined;
-          const state = await api.stage({
-            changeId: target.change?.id, kind: target.origin === 'staged-insert' ? 'insert' : 'update', database, table: tableName,
-            key: snapshot ? insertKey(meta, snapshot) : keyValues(meta, target.row),
-            values: { [column]: { before: target.change?.values[column] ? target.change.values[column].before : target.row[column] ?? null, after } }, snapshot,
-          });
-          acceptLedger(state);
-        });
+      for (const [column, raw] of Object.entries(values)) {
+        const columnMeta = meta.columns.find((c) => c.name === column);
+        if (!columnMeta) throw new Error(`Unknown column ${column}`);
+        const after = parseCellValue(columnMeta, raw);
+        // Compare with what is displayed, not the original, so an edit back to
+        // the original actually reaches the ledger and cancels the delta.
+        if (!sameValue(displayValue(target, column), after)) {
+          changes[column] = { before: target.change?.values[column] ? target.change.values[column].before : target.row[column] ?? null, after };
+        }
       }
-      if (get().editing === editing) set({ editing: null, editError: null });
-      if (editError && get().toast?.message === editError) set({ toast: null });
+      if (!Object.keys(changes).length) return true;
+      await mutation(async () => {
+        const merged = { ...target.row, ...Object.fromEntries(Object.entries(changes).map(([column, delta]) => [column, delta.after])) };
+        const snapshot = target.origin === 'staged-insert' ? merged : undefined;
+        acceptLedger(await api.stage({
+          changeId: target.change?.id,
+          kind: target.origin === 'staged-insert' ? 'insert' : 'update',
+          database, table: tableName,
+          key: snapshot ? insertKey(meta, snapshot) : keyValues(meta, target.row),
+          values: changes, snapshot, note,
+        }));
+      });
       void get().resolvePageNames();
       return true;
     } catch (err) {
       if (get().database === database && get().tableName === tableName) set({ editError: (err as Error).message });
       get().notify('error', (err as Error).message);
       return false;
+    }
+  },
+
+  /** Stage a fully specified new row (the SmartAI editor builds events/actions). */
+  async stageNewRowWith(values, note): Promise<string | null> {
+    const { meta, pendingMutations } = get();
+    if (!meta || meta.readOnly || pendingMutations) return null;
+    try {
+      return await mutation(async () => await stageNewRow(meta, { ...defaultRow(meta), ...values }, note));
+    } catch (err) { get().notify('error', (err as Error).message); return null; }
+  },
+
+  /** Resolve display names for arbitrary ids, so SmartAI chips can show them. */
+  async resolveNamesFor(entity, ids) {
+    const wanted = [...new Set(ids.map((id) => String(id)).filter((id) => id !== '' && !/^-?0+$/.test(id)))];
+    const missing = wanted.filter((id) => get().names[entity]?.[id] === undefined);
+    if (!missing.length) return;
+    const sourceToken = get().sourceToken;
+    for (let start = 0; start < missing.length; start += 200) {
+      const batch = missing.slice(start, start + 200);
+      try {
+        const names = await api.resolveNames(entity, batch);
+        if (get().sourceToken !== sourceToken) return;
+        set((state) => ({ names: { ...state.names, [entity]: { ...state.names[entity], ...Object.fromEntries(batch.map((id) => [id, names[id] ?? `#${id}`])) } } }));
+      } catch {
+        if (get().sourceToken !== sourceToken) return;
+        set((state) => ({ names: { ...state.names, [entity]: { ...state.names[entity], ...Object.fromEntries(batch.map((id) => [id, `#${id}`])) } } }));
+      }
     }
   },
 

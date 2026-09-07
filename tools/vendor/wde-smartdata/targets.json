@@ -1,0 +1,522 @@
+[
+    {
+        "id": 0,
+        "name": "SMART_TARGET_NONE",
+        "name_readable": "None",
+        "help": "None",
+        "description": "None",
+        "types": "Self"
+    },
+    {
+        "id": 1,
+        "name": "SMART_TARGET_SELF",
+        "name_readable": "Self",
+        "help": "Creature from this script",
+        "description": "Self",
+        "types": "Creature,GameObject,Self"
+    },
+    {
+        "id": 2,
+        "name": "SMART_TARGET_VICTIM",
+        "name_readable": "Victim",
+        "help": "Our current target (ie: highest aggro)",
+        "description": "Victim",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 3,
+        "name": "SMART_TARGET_HOSTILE_SECOND_AGGRO",
+        "name_readable": "Second highest aggro",
+        "help": "Creature with second highest aggro on the threat list",
+        "description": "Second highest aggro",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 4,
+        "name": "SMART_TARGET_HOSTILE_LAST_AGGRO",
+        "name_readable": "Least aggro",
+        "help": "Creature with least aggro on the threat list",
+        "description": "Least aggro",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 5,
+        "name": "SMART_TARGET_HOSTILE_RANDOM",
+        "name_readable": "Random hostile",
+        "help": "Any random target on our threat list",
+        "description": "Random hostile",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 6,
+        "name": "SMART_TARGET_HOSTILE_RANDOM_NOT_TOP",
+        "name_readable": "Random hostile but top",
+        "help": "Any random target except top threat",
+        "description": "Random hostile (not top)",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 7,
+        "name": "SMART_TARGET_ACTION_INVOKER",
+        "name_readable": "Action invoker",
+        "help": "Unit who caused the event to occur",
+        "description": "{invoker}",
+        "types": "Unit,Self",
+        "is_invoker": true
+    },
+    {
+        "id": 8,
+        "name": "SMART_TARGET_POSITION",
+        "name_readable": "Absolute position",
+        "help": "Absolute world position, use xyz from event params",
+        "description": "({x}, {y}, {z}{o:choose(0):|, {o}})",
+        "types": "Position",
+        "is_only_target": true,
+        "uses_target_position": true
+    },
+    {
+        "id": 9,
+        "name": "SMART_TARGET_CREATURE_RANGE",
+        "name_readable": "Creature in range",
+        "parameters": [
+            {
+                "name": "Creature",
+                "description": "Creature Entry to find",
+                "type": "CreatureParameter"
+            },
+            {
+                "name": "Minimum distance",
+                "type": "Parameter"
+            },
+            {
+                "name": "Maximum distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "{pram1value:choose(0):Any creature|Creature {pram1}} in {pram2} - {pram3} yards",
+        "types": "Creature"
+    },
+    {
+        "id": 10,
+        "name": "SMART_TARGET_CREATURE_GUID",
+        "name_readable": "Creature by spawnId",
+        "parameters": [
+            {
+                "name": "Creature GUID",
+                "description": "Creature GUID to find",
+                "type": "CreatureGUIDParameter"
+            },
+            {
+                "name": "Creature Entry",
+                "description": "It is used only to confirm found GUID is of this entry. Can be left to 0.",
+                "type": "CreatureParameter"
+            }
+        ],
+        "description": "Creature{pram2value:choose(0):| {pram2}} with guid {pram1}",
+        "types": "Creature"
+    },
+    {
+        "id": 11,
+        "name": "SMART_TARGET_CREATURE_DISTANCE",
+        "name_readable": "Creature in distance",
+        "parameters": [
+            {
+                "name": "Creature Entry",
+                "description": "Creature entry to find in given distance",
+                "type": "CreatureParameter"
+            },
+            {
+                "name": "Distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "{pram1value:choose(0):Any creature|Creature {pram1}} in {pram2} yd",
+        "types": "Creature"
+    },
+    {
+        "id": 12,
+        "name": "SMART_TARGET_STORED",
+        "name_readable": "Stored object",
+        "parameters": [
+            {
+                "name": "Variable ID",
+                "description": "Stored through action STORE_TARGET target ID",
+                "type": "StoredTargetParameter"
+            }
+        ],
+        "description": "{pram1}",
+        "types": "GameObject,Unit,Self",
+        "usable_with_script_types": "Creature,GameObject,TimedActionList"
+    },
+    {
+        "id": 13,
+        "name": "SMART_TARGET_GAMEOBJECT_RANGE",
+        "name_readable": "Gameobject in range",
+        "parameters": [
+            {
+                "name": "Gameobject",
+                "description": "Gameobject Entry to find",
+                "type": "GameobjectParameter"
+            },
+            {
+                "name": "Minimum distance",
+                "type": "Parameter"
+            },
+            {
+                "name": "Maximum distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "{pram1value:choose(0):Any gameobject|Gameobject {pram1}} in {pram2} - {pram3} yards",
+        "types": "GameObject"
+    },
+    {
+        "id": 14,
+        "name": "SMART_TARGET_GAMEOBJECT_GUID",
+        "name_readable": "Gameobject by spawnId",
+        "parameters": [
+            {
+                "name": "Gameobject GUID",
+                "description": "Gameobject GUID to find",
+                "type": "GameobjectGUIDParameter"
+            },
+            {
+                "name": "Gameobject Entry",
+                "description": "It is used only to confirm found GUID is of this entry. Can be left to 0.",
+                "type": "GameobjectParameter"
+            }
+        ],
+        "description": "Gameobject{pram2value:choose(0):| {pram2}} with guid {pram1}",
+        "types": "GameObject"
+    },
+    {
+        "id": 15,
+        "name": "SMART_TARGET_GAMEOBJECT_DISTANCE",
+        "name_readable": "Gameobject in distance",
+        "parameters": [
+            {
+                "name": "Gameobject Entry",
+                "description": "Gameobject entry to find in given distance",
+                "type": "GameobjectParameter"
+            },
+            {
+                "name": "Distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "{pram1value:choose(0):Any gameobject|Gameobject {pram1}} in {pram2} yd",
+        "types": "GameObject"
+    },
+    {
+        "id": 16,
+        "name": "SMART_TARGET_INVOKER_PARTY",
+        "name_readable": "Invoker's party",
+        "help": "If in group, target will be player who created a party, if not, it will be action invoker",
+        "description": "{invoker}'s party",
+        "types": "Player",
+        "is_invoker": true
+    },
+    {
+        "id": 17,
+        "name": "SMART_TARGET_PLAYER_RANGE",
+        "name_readable": "Player in range",
+        "help": "Finds *all* players in given range",
+        "parameters": [
+            {
+                "name": "Minimum distance",
+                "type": "Parameter"
+            },
+            {
+                "name": "Maximum distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "Players in {pram1} - {pram2} yards",
+        "types": "Player"
+    },
+    {
+        "id": 18,
+        "name": "SMART_TARGET_PLAYER_DISTANCE",
+        "name_readable": "Player in distance",
+        "help": "Finds *all* players in distance",
+        "parameters": [
+            {
+                "name": "Distance",
+                "type": "Parameter",
+                "required": true
+            }
+        ],
+        "description": "Players in {pram1} yards",
+        "types": "Player"
+    },
+    {
+        "id": 19,
+        "name": "SMART_TARGET_CLOSEST_CREATURE",
+        "name_readable": "Closest creature",
+        "parameters": [
+            {
+                "name": "Creature",
+                "description": "Creature Entry to find",
+                "type": "CreatureParameter",
+                "required": true
+            },
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for creature. If 0, will find in 100 yards, but it is not recommended",
+                "type": "Parameter"
+            },
+            {
+                "name": "Dead",
+                "description": "If true, only dead creatures will be returned. If false, only alive creatures will be returned.",
+                "type": "BoolParameter"
+            }
+        ],
+        "description": "Closest {pram3value:choose(0):alive|dead} creature {pram1} in {pram2value:choose(0):100|{pram2}} yards",
+        "types": "Creature"
+    },
+    {
+        "id": 20,
+        "name": "SMART_TARGET_CLOSEST_GAMEOBJECT",
+        "name_readable": "Closest gameobject",
+        "parameters": [
+            {
+                "name": "Gameobject",
+                "description": "Gameobject Entry to find",
+                "type": "GameobjectParameter",
+                "required": true
+            },
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for gameobject. If 0, will find in 100 yards, but it is not recommended",
+                "type": "Parameter"
+            }
+        ],
+        "description": "Closest gameobject {pram1} in {pram2value:choose(0):100|{pram2}} yards",
+        "types": "GameObject"
+    },
+    {
+        "id": 21,
+        "name": "SMART_TARGET_CLOSEST_PLAYER",
+        "name_readable": "Closest player",
+        "parameters": [
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for player.",
+                "type": "Parameter"
+            }
+        ],
+        "description": "Closest player in {pram1} yards",
+        "types": "Player"
+    },
+    {
+        "id": 22,
+        "name": "SMART_TARGET_ACTION_INVOKER_VEHICLE",
+        "name_readable": "Invoker's vehicle",
+        "help": "Unit's vehicle who caused this event to occur",
+        "description": "{invoker}'s vehicle",
+        "types": "Creature,Self",
+        "is_invoker": true
+    },
+    {
+        "id": 23,
+        "name": "SMART_TARGET_OWNER_OR_SUMMONER",
+        "name_readable": "Owner or summoner",
+        "help": "Unit's owner or summoner. Keep in mind in action Summon Creature, target is NOT summoner, the summoner is still scripted creature",
+        "description": "Owner/Summoner",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,GameObject,TimedActionList"
+    },
+    {
+        "id": 24,
+        "name": "SMART_TARGET_THREAT_LIST",
+        "name_readable": "All hostile",
+        "help": "All units on creature's threat list",
+        "description": "Threat list",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 25,
+        "name": "SMART_TARGET_CLOSEST_ENEMY",
+        "name_readable": "Closest enemy",
+        "parameters": [
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for enemy",
+                "type": "Parameter",
+                "required": true
+            },
+            {
+                "name": "Player only",
+                "description": "If true, only players will be returned",
+                "type": "BoolParameter"
+            }
+        ],
+        "description": "Closest enemy {pram2value:choose(0):creature|player} in {pram1} yards",
+        "types": "Unit"
+    },
+    {
+        "id": 26,
+        "name": "SMART_TARGET_CLOSEST_FRIENDLY",
+        "name_readable": "Closest friendly",
+        "parameters": [
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for friendly unit",
+                "type": "Parameter",
+                "required": true
+            },
+            {
+                "name": "Player only",
+                "description": "If true, only players will be returned",
+                "type": "BoolParameter"
+            }
+        ],
+        "description": "Closest friendly {pram2value:choose(0):creature|player} in {pram1} yards",
+        "types": "Unit"
+    },
+    {
+        "id": 27,
+        "name": "SMART_TARGET_LOOT_RECIPIENTS",
+        "name_readable": "Loot recipients",
+        "description": "Targets all loot recipients",
+        "types": "Player",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 28,
+        "name": "SMART_TARGET_FARTHEST",
+        "name_readable": "Farthest attacked unit",
+        "parameters": [
+            {
+                "name": "Distance",
+                "description": "Maximum distance to check for friendly unit",
+                "type": "Parameter",
+                "required": true
+            },
+            {
+                "name": "Player only",
+                "description": "If true, only players will be returned",
+                "type": "BoolParameter"
+            },
+            {
+                "name": "Is in LoS",
+                "description": "If true, only targets in LoS",
+                "type": "BoolParameter"
+            }
+        ],
+        "description": "Farthest {pram2value:choose(0):creature|player} within {pram1} yards on the threat list",
+        "types": "Unit",
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 29,
+        "name": "SMART_TARGET_VEHICLE_ACCESSORY",
+        "name_readable": "Vehicle passenger",
+        "parameters": [
+            {
+                "name": "Seat",
+                "description": "SeatId of vehicle",
+                "type": "Parameter"
+            }
+        ],
+        "description": "Target unit in Seat {pram1}",
+        "types": "Unit",
+        "tags": [
+            "TrinityWrath",
+            "TrinityMaster",
+            "TrinityCata"
+        ],
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 201,
+        "name": "SMART_TARGET_PLAYER_WITH_AURA_AC",
+        "name_readable": "Players {pram2value:choose(0):with|without} aura {pram1} withing distance {pram3}",
+        "parameters": [
+            {
+                "name": "Spell",
+                "type": "SpellParameter"
+            },
+            {
+                "name": "Negation",
+                "type": "BoolParameter"
+            },
+            {
+                "name": "Maximum distance",
+                "type": "Distance"
+            }
+        ],
+        "description": "Players {pram1}",
+        "types": "Player",
+        "tags": [
+            "Azeroth"
+        ]
+    },
+    {
+        "id": 202,
+        "name": "SMART_TARGET_RANDOM_POINT_AC",
+        "name_readable": "Random position",
+        "parameters": [
+            {
+                "name": "Range",
+                "type": "Parameter"
+            }
+        ],
+        "description": "random point withing {pram1} yd around ({x}, {y}, {z}{o:choose(0):|, {o}})",
+        "types": "Position",
+        "is_only_target": true,
+        "tags": [
+            "Azeroth"
+        ]
+    },
+    {
+        "id": 203,
+        "name": "SMART_TARGET_ROLE_SELECTION_AC",
+        "name_readable": "Players by role",
+        "parameters": [
+            {
+                "name": "Maximum distance",
+                "type": "Parameter"
+            },
+            {
+                "name": "Role",
+                "type": "FlagParameter",
+                "values": {
+                    "1": "Tanks",
+                    "2": "Healers",
+                    "4": "Damage"
+                }
+            },
+            {
+                "name": "Max targets",
+                "type": "Parameter"
+            }
+        ],
+        "description": "Players in range {pram1} yd with role {pram2}{pram3value:choose(0):| (limit to {pram3} targets)}",
+        "types": "Player",
+        "tags": [
+            "Azeroth"
+        ],
+        "usable_with_script_types": "Creature,TimedActionList"
+    },
+    {
+        "id": 9999,
+        "name": "SMART_TARGET_META_LAST_INVOKER",
+        "name_readable": "Last action invoker",
+        "help": "Unit who caused the last event to occur",
+        "description": "Action invoker",
+        "types": "Unit,Self",
+        "replace_with_id": 7
+    }
+]

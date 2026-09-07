@@ -2,13 +2,14 @@
   "name": "wyrmrest-editor",
   "version": "0.2.0",
   "private": true,
-  "description": "Wyrmrest Editor \u2014 a TrinityCore 3.4.3 database editor with staged changes and sql/updates export",
+  "description": "Wyrmrest Editor — a TrinityCore 3.4.3 database editor with staged changes and sql/updates export",
   "author": "Wyrmrest Editor contributors",
   "license": "GPL-2.0-only",
   "main": "dist/node/main/main.js",
   "type": "module",
   "scripts": {
-    "metadata": "npm run metadata:schema && npm run metadata:views && npm run metadata:docs && npm run metadata:build",
+    "metadata": "npm run metadata:schema && npm run metadata:views && npm run metadata:docs && npm run metadata:build && npm run metadata:smartai",
+    "metadata:smartai": "node tools/build-smartai.mjs",
     "metadata:fetch-docs": "node tools/fetch-docs.mjs",
     "metadata:schema": "node tools/ingest-schema.mjs",
     "metadata:views": "node tools/ingest-view-enums.mjs",
@@ -30,7 +31,8 @@
     "pretest": "npm run build",
     "test:browser": "playwright test",
     "check": "npm run typecheck && npm test",
-    "pretest:browser": "npm run build"
+    "pretest:browser": "npm run build",
+    "icon": "node tools/make-icon.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

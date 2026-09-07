@@ -200,6 +200,12 @@ function main() {
           valueSet = docCol.valueSet;
           valueSetSource = 'wiki';
         }
+        if (rule?.noValueSet) {
+          // Curated opt-out: the documented list belongs to another column, or
+          // only applies to some rows, so showing it would be a lie.
+          valueSet = null;
+          valueSetSource = null;
+        }
 
         // ---- reference priority: curated > declared FK > wiki link ---------
         let reference = null;
@@ -309,6 +315,8 @@ function main() {
           reference,
           dbc: docCol?.dbc ?? null,
           inPrimaryKey: table.primaryKey.includes(col.name),
+          // Keeps the second pass from re-inheriting a set we removed on purpose.
+          ...(rule?.noValueSet ? { noValueSet: true } : {}),
         };
       });
 
@@ -368,7 +376,7 @@ function main() {
     }
     for (const table of out) {
       for (const col of table.columns) {
-        if (col.valueSet || col.reference || col.kind !== 'integer') continue;
+        if (col.valueSet || col.reference || col.noValueSet || col.kind !== 'integer') continue;
         const donor = donors.get(`${col.name.toLowerCase()}|${col.baseType}`);
         if (!donor || donor.ambiguous || donor.from === table.name) continue;
         col.valueSet = donor.valueSet;

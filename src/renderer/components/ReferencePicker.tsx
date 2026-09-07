@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import type { CellValue, ColumnMeta, LookupItem } from '../../shared/types';
+import { parseCellValue } from '../../shared/values';
+import { Modal } from './Modal';
 
 interface Props {
   column: ColumnMeta;
@@ -15,6 +17,8 @@ interface Props {
  * "faction = 168" into "168 — Defias Brotherhood" and back.
  */
 export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
+  const busy = useStore((s) => s.pendingMutations > 0);
+  const stageError = useStore((s) => s.editError);
   const entities = useStore((s) => s.entities);
   const openTable = useStore((s) => s.openTable);
   const reference = column.reference!;
@@ -25,6 +29,11 @@ export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [raw, setRaw] = useState(String(value ?? ''));
+  const [rawError, setRawError] = useState<string | null>(null);
+  const pick = (value: CellValue) => {
+    try { onPick(parseCellValue(column, value)); }
+    catch (err) { setRawError((err as Error).message); }
+  };
 
   const target = useMemo(
     () => `${reference.database}.${reference.table}.${reference.column}`,
@@ -54,8 +63,7 @@ export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
   }, [entity, term]);
 
   return (
-    <div className="popover-backdrop" onMouseDown={onCancel}>
-      <div className="popover picker-popover" onMouseDown={(e) => e.stopPropagation()}>
+    <Modal label={`${column.label} reference picker`} className="popover picker-popover" backdropClassName="popover-backdrop" onClose={onCancel} busy={busy}>
         <header className="popover-head">
           <div>
             <strong>{entity?.label ?? column.label}</strong>
@@ -63,6 +71,7 @@ export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
           </div>
           <button
             className="btn btn-ghost"
+            disabled={busy}
             onClick={() => {
               onCancel();
               void openTable(reference.database, reference.table);
@@ -75,42 +84,49 @@ export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
         <div className="picker-search">
           <input
             autoFocus
+            aria-label="Search references"
+            disabled={!entity || busy}
             placeholder={entity ? `Search ${entity.table} by id or name…` : 'Search…'}
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
           <div className="picker-raw">
-            <label>raw</label>
+            <label htmlFor="reference-raw">Raw ID</label>
             <input
+              disabled={busy}
+              id="reference-raw"
+              aria-invalid={Boolean(rawError)}
               value={raw}
-              onChange={(e) => setRaw(e.target.value)}
+              onChange={(e) => { setRaw(e.target.value); setRawError(null); }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onPick(column.kind === 'integer' ? Number(raw) || 0 : raw);
+                if (e.key === 'Enter') pick(raw);
               }}
             />
-            <button className="btn btn-accent" onClick={() => onPick(column.kind === 'integer' ? Number(raw) || 0 : raw)}>
-              Set
+            <button className="btn btn-accent" disabled={busy} onClick={() => pick(raw)}>
+              {busy ? 'Staging…' : 'Set'}
             </button>
           </div>
         </div>
 
-        <div className="picker-list">
+        {(rawError || stageError) && <div className="error-box" role="alert">{rawError ?? stageError}</div>}
+        <div className="picker-list" aria-busy={loading}>
           {!entity && <div className="muted">This column links to {target}; no searchable entity is registered.</div>}
-          {error && <div className="error-box">{error}</div>}
+          {error && <div className="error-box" role="alert">{error}</div>}
           {loading && <div className="muted">searching…</div>}
           {!loading &&
-            items.map((item) => (
+            items.map((item, index) => (
               <button
-                key={String(item.id)}
+                disabled={busy}
+                key={`${item.id}:${item.detail ?? ''}:${index}`}
                 className={`picker-item ${String(item.id) === String(value) ? 'current' : ''}`}
-                onClick={() => onPick(column.kind === 'integer' ? Number(item.id) : item.id)}
+                onClick={() => pick(item.id)}
               >
                 <span className="picker-id">{item.id}</span>
                 <span className="picker-name">{item.name}</span>
                 {item.detail && <span className="picker-detail">{item.detail}</span>}
               </button>
             ))}
-          {!loading && entity && !items.length && <div className="muted">no matches</div>}
+          {!loading && !error && entity && !items.length && <div className="muted">no matches</div>}
         </div>
 
         <footer className="popover-foot">
@@ -119,18 +135,17 @@ export function ReferencePicker({ column, value, onPick, onCancel }: Props) {
           </span>
           <div className="spacer" />
           {column.nullable && (
-            <button className="btn btn-ghost" onClick={() => onPick(null)}>
+            <button className="btn btn-ghost" disabled={busy} onClick={() => onPick(null)}>
               Set NULL
             </button>
           )}
-          <button className="btn btn-ghost" onClick={() => onPick(0)}>
-            Clear (0)
+          <button className="btn btn-ghost" disabled={busy} onClick={() => pick(column.kind === 'integer' ? 0 : '')}>
+            {column.kind === 'integer' ? 'Clear (0)' : 'Set empty string'}
           </button>
-          <button className="btn btn-ghost" onClick={onCancel}>
+          <button className="btn btn-ghost" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }

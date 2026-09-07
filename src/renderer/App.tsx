@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { Sidebar } from './components/Sidebar';
 import { TableView } from './components/TableView';
@@ -8,64 +8,49 @@ import { ExportDialog } from './components/ExportDialog';
 import { ConnectionDialog } from './components/ConnectionDialog';
 import { CommandPalette } from './components/CommandPalette';
 import { Toast } from './components/Toast';
+import { Modal } from './components/Modal';
 import { DATABASES } from '../shared/types';
 import { isDesktop } from './api';
 
 export function App() {
-  const {
-    ready,
-    error,
-    init,
-    status,
-    ledger,
-    showDocs,
-    showLedger,
-    dialog,
-    setDialog,
-    database,
-    tableName,
-    meta,
-  } = useStore();
+  const { ready, error, init, status, ledger, showSidebar, showDocs, showLedger, dialog, setDialog, database, pendingMutations } = useStore();
+  const [compact, setCompact] = useState(window.innerWidth <= 900);
 
+  useEffect(() => { void init(); }, [init]);
   useEffect(() => {
-    void init();
-  }, [init]);
+    const resize = () => {
+      const narrow = window.innerWidth <= 900;
+      setCompact((previous) => {
+        if (narrow && !previous) useStore.setState({ showSidebar: false, showDocs: false });
+        return narrow;
+      });
+    };
+    if (window.innerWidth <= 900) useStore.setState({ showSidebar: false, showDocs: false });
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const meta0 = event.ctrlKey || event.metaKey;
+      if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+      const command = event.ctrlKey || event.metaKey;
       const target = event.target as HTMLElement | null;
-      const typing =
-        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
-
-      if (meta0 && event.key.toLowerCase() === 'k') {
+      const typing = target?.isContentEditable || Boolean(target?.closest?.('input, textarea, select'));
+      const s = useStore.getState();
+      const key = event.key.toLowerCase();
+      if (command && key === 'k') { event.preventDefault(); setDialog('palette'); return; }
+      if (command && (key === 'e' || key === 's')) {
         event.preventDefault();
-        setDialog(useStore.getState().dialog === 'palette' ? null : 'palette');
+        if (!typing && !s.editing) setDialog('export');
+        return;
       }
-      if (meta0 && (event.key.toLowerCase() === 'e' || event.key.toLowerCase() === 's')) {
-        event.preventDefault();
-        setDialog('export');
+      if (command && !typing && !s.editing && !s.pendingMutations) {
+        if (key === 'i') { event.preventDefault(); void s.addRow(); }
+        else if (key === 'd') { event.preventDefault(); void s.duplicateRow(); }
+        else if (key === 'delete' || key === 'backspace') { event.preventDefault(); if (s.selected) void s.deleteRow(s.selected.rowKey); }
+        else if (key === 'r') { event.preventDefault(); if (s.selected) void s.revertRow(s.selected.rowKey); }
       }
-      // Quick row actions — ignored while typing in a field or when a modal is open.
-      if (meta0 && !typing && !useStore.getState().dialog) {
-        const s = useStore.getState();
-        const key = event.key.toLowerCase();
-        if (key === 'i') {
-          event.preventDefault();
-          void s.addRow();
-        } else if (key === 'd') {
-          event.preventDefault();
-          if (s.selected) void s.duplicateRow(s.selected.rowKey);
-          else s.notify('info', 'Click a cell in the grid first.');
-        } else if (key === 'delete' || key === 'backspace') {
-          event.preventDefault();
-          if (s.selected) void s.deleteRow(s.selected.rowKey);
-        } else if (key === 'r') {
-          event.preventDefault();
-          if (s.selected) void s.revertRow(s.selected.rowKey);
-        }
-      }
-      if (event.key === 'Escape') setDialog(null);
+      if (event.key === 'Escape' && s.editing) s.beginEdit(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -75,110 +60,58 @@ export function App() {
     if (!isDesktop()) return;
     return window.wyrmrest?.onMenu((action) => {
       const s = useStore.getState();
+      if (document.querySelector('[role="dialog"]') || s.editing || s.pendingMutations) return;
       if (action === 'export') setDialog('export');
       if (action === 'settings') setDialog('connection');
       if (action === 'new-row') void s.addRow();
-      if (action === 'duplicate-row' && s.selected) void s.duplicateRow(s.selected.rowKey);
+      if (action === 'duplicate-row') void s.duplicateRow();
       if (action === 'delete-row' && s.selected) void s.deleteRow(s.selected.rowKey);
       if (action === 'revert-row' && s.selected) void s.revertRow(s.selected.rowKey);
     });
   }, [setDialog]);
 
-  if (!ready) {
-    return (
-      <div className="boot">
-        <div className="boot-logo">Wyrmrest Editor</div>
-        <div className="boot-note">loading table metadata…</div>
-      </div>
-    );
-  }
+  if (error) return <div className="boot" role="alert"><div className="boot-logo">Wyrmrest Editor</div><h1>Could not start the editor</h1>
+    <div className="boot-error">{error}</div><p className="boot-note">Check that the editor service is running, then try again. Your staged changes remain saved.</p>
+    <div><button className="btn btn-accent" onClick={() => void init()}>Retry connection</button></div></div>;
+  if (!ready) return <div className="boot" role="status"><div className="boot-logo">Wyrmrest Editor</div><span className="spinner" /><div className="boot-note">Loading your workspace…</div></div>;
 
-  if (error) {
-    return (
-      <div className="boot">
-        <div className="boot-logo">Wyrmrest Editor</div>
-        <div className="boot-error">{error}</div>
-        <div className="boot-note">Run `npm run metadata` to regenerate table metadata from the SQL dumps.</div>
-      </div>
-    );
-  }
-
-  const staged = ledger.length;
   const mode = status?.mode ?? 'demo';
-
-  return (
-    <div className={`app ${showDocs ? '' : 'no-docs'}`}>
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden />
-          <span className="brand-name">Wyrmrest Editor</span>
-          <span className="brand-version">3.4.3</span>
-        </div>
-
-        <nav className="db-tabs">
-          {DATABASES.map((db) => (
-            <button
-              key={db}
-              className={`db-tab ${db === database ? 'active' : ''}`}
-              onClick={() => {
-                useStore.setState({ database: db });
-                setDialog('palette');
-              }}
-            >
-              {db}
-            </button>
-          ))}
-        </nav>
-
-        <div className="topbar-spacer">
-          {tableName && (
-            <button className="crumb" onClick={() => setDialog('palette')} title="Switch table (Ctrl+K)">
-              <span className="crumb-db">{database}</span>
-              <span className="crumb-sep">/</span>
-              <span className="crumb-table">{tableName}</span>
-              {meta?.readOnly && <span className="tag tag-warn">read only</span>}
-            </button>
-          )}
-        </div>
-
-        <div className="topbar-actions">
-          <button
-            className={`chip ${mode === 'live' ? 'chip-live' : 'chip-demo'}`}
-            onClick={() => setDialog('connection')}
-            title={status?.message ?? ''}
-          >
-            <span className="dot" />
-            {mode === 'live' ? `${status?.profile?.host ?? 'connected'}` : 'demo data'}
-          </button>
-          <button className="chip" onClick={() => useStore.setState({ showDocs: !showDocs })}>
-            {showDocs ? 'Hide docs' : 'Show docs'}
-          </button>
-          <button
-            className={`chip ${staged ? 'chip-staged' : ''}`}
-            onClick={() => useStore.setState({ showLedger: !showLedger })}
-          >
-            Staged changes
-            <span className="badge">{staged}</span>
-          </button>
-          <button className="chip chip-primary" onClick={() => setDialog('export')} disabled={!staged}>
-            Export SQL
-          </button>
-        </div>
-      </header>
-
-      <div className="body">
-        <Sidebar />
-        <main className="main">
-          <TableView />
-        </main>
-        {showDocs && <DocsPanel />}
+  const staged = ledger.length;
+  const dbStatus = status?.databases[database];
+  return <div className={`app ${showDocs && !compact ? '' : 'no-docs'} ${showSidebar && !compact ? '' : 'no-sidebar'}`}>
+    <header className="topbar">
+      <div className="brand"><span className="brand-mark" aria-hidden /><span className="brand-name">Wyrmrest Editor</span><span className="brand-version">3.4.3</span></div>
+      <nav className="db-tabs" aria-label="Databases">{DATABASES.map((db) => <button key={db} className={`db-tab ${db === database ? 'active' : ''}`}
+        aria-current={db === database ? 'page' : undefined} onClick={() => useStore.getState().setDatabase(db)}>{db}</button>)}</nav>
+      <div className="topbar-spacer" />
+      <button className="find-table" onClick={() => setDialog('palette')}>Find table <kbd>Ctrl K</kbd></button>
+      <div className="topbar-actions">
+        <button className={`chip ${mode === 'live' ? 'chip-live' : 'chip-demo'}`} onClick={() => setDialog('connection')} title="Connection settings">
+          <span className="dot" />{mode === 'live' ? 'Live connection' : 'demo data'}</button>
+        <button className="chip panel-toggle" aria-expanded={showSidebar} onClick={() => useStore.setState({ showSidebar: !showSidebar })}>Tables</button>
+        <button className="chip panel-toggle" aria-expanded={showDocs} onClick={() => useStore.setState({ showDocs: !showDocs })}>Inspector</button>
+        <button className={`chip ${staged ? 'chip-staged' : ''}`} aria-expanded={showLedger} onClick={() => useStore.setState({ showLedger: !showLedger })}>
+          Staged changes <span className="badge">{staged}</span></button>
+        <button className="chip chip-primary" onClick={() => setDialog('export')} disabled={!staged || pendingMutations > 0}>Export SQL</button>
       </div>
-
-      {showLedger && <LedgerPanel />}
-      {dialog === 'export' && <ExportDialog />}
-      {dialog === 'connection' && <ConnectionDialog />}
-      {dialog === 'palette' && <CommandPalette />}
-      <Toast />
+    </header>
+    <div className={`workspace-status ${mode === 'demo' ? 'workspace-demo' : ''}`}>
+      <span>{mode === 'demo' ? 'Offline sample workspace' : `${status?.profile?.name} · ${status?.profile?.host}:${status?.profile?.port}`}</span>
+      <span className="muted">{mode === 'demo' ? 'Real table definitions, sample rows only. Connect a server for your own data.' : dbStatus?.available ? `${database} → ${status?.profile?.databases[database]} · ${dbStatus.tables} tables` : `${database}: ${dbStatus?.error ?? 'unavailable'}`}</span>
+      <span className="workspace-save" role="status">{pendingMutations ? 'Saving to ledger…' : staged ? `${staged} saved locally · not applied` : 'No pending changes'}</span>
     </div>
-  );
+    {status?.warning && <div className="workspace-warning" role="alert"><span>{status.warning}</span><button className="btn btn-quick" onClick={() => setDialog('connection')}>Connection settings</button></div>}
+    <div className="body">
+      {showSidebar && !compact && <Sidebar />}
+      <main className="main"><TableView /></main>
+      {showDocs && !compact && <DocsPanel />}
+    </div>
+    {showLedger && <LedgerPanel />}
+    {showSidebar && compact && <Modal className="panel-drawer" label="Table browser" onClose={() => useStore.setState({ showSidebar: false })}><Sidebar /></Modal>}
+    {showDocs && compact && <Modal className="panel-drawer" label="Inspector" onClose={() => useStore.setState({ showDocs: false })}><DocsPanel /></Modal>}
+    {dialog === 'export' && <ExportDialog />}
+    {dialog === 'connection' && <ConnectionDialog />}
+    {dialog === 'palette' && <CommandPalette />}
+    <Toast />
+  </div>;
 }

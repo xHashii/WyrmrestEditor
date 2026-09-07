@@ -9,14 +9,23 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   root: 'src/renderer',
   base: './',
-  plugins: [react()],
+  plugins: [react(), {
+    name: 'production-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      // HMR needs a permissive development policy, but shipped renderers do not.
+      return html.replace(/connect-src [^;]+;/, "connect-src 'self';").replace(/script-src [^\"]+/, "script-src 'self'");
+    },
+  }],
   server: {
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
     // The preview is served through a generated hostname, so no host allowlist.
     allowedHosts: true,
-    cors: true,
+    // The renderer and API share the preview origin; cross-origin reads of
+    // connection settings or data are not needed.
+    cors: false,
     proxy: {
       // Regex so we proxy /api/<route> but NOT /api.ts — the renderer's own
       // API-client module is served by Vite as /api.ts; a plain '/api' prefix

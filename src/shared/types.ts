@@ -146,6 +146,8 @@ export interface ConnectionProfile {
   port: number;
   user: string;
   password: string;
+  /** Passwords are saved to disk only with explicit consent. */
+  rememberPassword?: boolean;
   databases: Record<DatabaseName, string>;
 }
 
@@ -157,6 +159,8 @@ export interface ConnectionStatus {
   profile: Omit<ConnectionProfile, 'password'> | null;
   serverVersion: string | null;
   message: string | null;
+  /** A startup/reconnection problem, while a usable demo workspace is shown. */
+  warning?: string;
   databases: Partial<Record<DatabaseName, { available: boolean; tables: number; error?: string }>>;
 }
 
@@ -234,6 +238,8 @@ export interface LedgerState {
 }
 
 export interface StageRequest {
+  /** Stable ledger identity when editing/deleting a staged insert, even when its key changes. */
+  changeId?: string;
   kind: ChangeKind;
   database: DatabaseName;
   table: string;

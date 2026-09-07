@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { METADATA_DIR } from './paths.js';
+import { DATABASES } from '../shared/types.js';
 import type { DatabaseName, MetadataIndex, TableMeta } from '../shared/types.js';
 
 /**
@@ -24,6 +25,7 @@ export function metadataIndex(): MetadataIndex {
 }
 
 function loadDatabase(database: DatabaseName): Map<string, TableMeta> {
+  if (!DATABASES.includes(database)) throw new Error(`Unknown database: ${database}`);
   const cached = tableCache.get(database);
   if (cached) return cached;
   const file = path.join(METADATA_DIR, 'tables', `${database}.json`);

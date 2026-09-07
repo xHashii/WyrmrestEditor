@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,12 +39,17 @@ export const METADATA_DIR =
 
 /** Where the ledger and settings live. Overridable for tests / portable use. */
 export function appHome(): string {
-  const home = process.env.WYRMREST_HOME ?? path.join(APP_ROOT, '.wyrmrest');
-  fs.mkdirSync(home, { recursive: true });
+  // Installed app.asar files (and /opt on Linux) are not writable. Keep existing
+  // development work discoverable, but default new installs to the user's home.
+  const legacy = path.join(APP_ROOT, '.wyrmrest');
+  const home = process.env.WYRMREST_HOME ??
+    (!APP_ROOT.includes('.asar') && ['ledger.json', 'settings.json'].some((name) => fs.existsSync(path.join(legacy, name))) ? legacy : path.join(os.homedir(), '.wyrmrest'));
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
   return home;
 }
 
 /** Where `sql/updates/<db>/<version>/…` files are written. */
 export function defaultExportRoot(): string {
-  return process.env.WYRMREST_EXPORT_ROOT ?? APP_ROOT;
+  return process.env.WYRMREST_EXPORT_ROOT ??
+    (APP_ROOT.includes('.asar') ? path.join(os.homedir(), 'Wyrmrest Exports') : APP_ROOT);
 }

@@ -3,6 +3,8 @@
  * the renderer. Everything crossing the IPC or HTTP boundary is described here.
  */
 
+import type { SmartData } from './smart.js';
+
 export type DatabaseName = 'auth' | 'characters' | 'world' | 'hotfixes';
 export const DATABASES: DatabaseName[] = ['auth', 'characters', 'world', 'hotfixes'];
 
@@ -68,6 +70,8 @@ export interface ColumnMeta {
   editor: EditorKind;
   valueSet: ValueSet | null;
   valueSetSource: string | null;
+  /** Curated opt-out: this column must not carry (or inherit) a documented enum. */
+  noValueSet?: boolean;
   reference: ColumnReference | null;
   dbc: { dbc: string; column: string | null; label: string }[] | null;
   inPrimaryKey: boolean;
@@ -177,12 +181,16 @@ export interface FilterClause {
   value?: CellValue | CellValue[];
 }
 
+export type SearchScope = 'all' | 'names' | 'ids' | 'references';
+
 export interface QueryRequest {
   database: DatabaseName;
   table: string;
   offset?: number;
   limit?: number;
   search?: string;
+  /** What `search` is allowed to look at. Defaults to 'all'. */
+  searchScope?: SearchScope;
   filters?: FilterClause[];
   orderBy?: { column: string; direction: 'asc' | 'desc' }[];
 }
@@ -195,6 +203,32 @@ export interface QueryResult {
   truncated: boolean;
   durationMs: number;
   sql: string;
+  /** How the search box interpreted the query (ignored/unknown tokens, …). */
+  searchNotes?: string[];
+  /** `entity:term` parts of the search and the rows they resolved to. */
+  searchReferences?: { entity: string; term: string; matches: number; shown: string[]; failed?: boolean }[];
+}
+
+// ---------------------------------------------------------------------------
+// SmartAI (smart_scripts)
+// ---------------------------------------------------------------------------
+
+/** A script the picker can offer: one (entryorguid, source_type) pair. */
+export interface SmartScriptSummary {
+  entryorguid: number | string;
+  sourceType: number;
+  rows: number;
+  events: number;
+  name: string | null;
+  nameResolved: boolean;
+  kind: string | null;
+}
+
+export interface SmartScriptRequest {
+  /** Match creature / gameobject / quest names or the numeric entry. */
+  search?: string;
+  sourceType?: number;
+  limit?: number;
 }
 
 export interface LookupRequest {
@@ -309,6 +343,10 @@ export interface WyrmrestApi {
   disconnect(): Promise<ConnectionStatus>;
   query(request: QueryRequest): Promise<QueryResult>;
   lookup(request: LookupRequest): Promise<LookupItem[]>;
+  /** Distinct SmartAI scripts, searchable by creature / object / quest name. */
+  smartScripts(request: SmartScriptRequest): Promise<SmartScriptSummary[]>;
+  /** Generated SmartAI definitions (events, actions, targets, parameters). */
+  getSmartData(): Promise<SmartData>;
   resolveNames(entity: string, ids: (number | string)[]): Promise<Record<string, string>>;
   getLedger(): Promise<LedgerState>;
   stage(request: StageRequest): Promise<LedgerState>;

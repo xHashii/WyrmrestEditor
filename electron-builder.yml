@@ -20,13 +20,20 @@ extraResources:
 
 asar: true
 
+# `npm run icon` regenerates these from resources/icons/icon.svg.
 win:
+  icon: resources/icons/icon.ico
   target:
     - target: nsis
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: WyrmrestEditor-${version}-win-${arch}.${ext}
+  # both targets must land on their own file name
+  artifactName: WyrmrestEditor-${version}-win-${arch}-setup.${ext}
+
+portable:
+  artifactName: WyrmrestEditor-${version}-win-${arch}-portable.${ext}
+  requestExecutionLevel: user
 
 nsis:
   oneClick: false
@@ -45,6 +52,7 @@ mac:
   artifactName: WyrmrestEditor-${version}-mac-${arch}.${ext}
 
 linux:
+  icon: resources/icons/icon.png
   category: Development
   maintainer: Wyrmrest Editor contributors
   target:

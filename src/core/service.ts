@@ -1,6 +1,7 @@
 import { DemoDataSource, MySqlDataSource, type DataSource } from './datasource.js';
 import { Ledger } from './ledger.js';
-import { entityMeta, metadataIndex, tableMeta } from './metadata.js';
+import { entityMeta, metadataIndex, smartData, tableMeta, trySmartData } from './metadata.js';
+import { parseSearch } from '../shared/search.js';
 import { exportChanges, renderChanges } from './export.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { renderChange } from './sql.js';
@@ -17,6 +18,8 @@ import type {
   LookupItem,
   LookupRequest,
   MetadataIndex,
+  SmartScriptRequest,
+  SmartScriptSummary,
   QueryRequest,
   QueryResult,
   StageRequest,
@@ -24,6 +27,7 @@ import type {
   WyrmrestApi,
 } from '../shared/types.js';
 import { DATABASES } from '../shared/types.js';
+import type { SmartData } from '../shared/smart.js';
 
 /**
  * The application service — one object implementing the whole API surface.
@@ -141,6 +145,72 @@ export class WyrmrestService implements WyrmrestApi {
     const out: Record<string, string> = {};
     for (const item of items) out[String(item.id)] = item.name;
     return out;
+  }
+
+  async getSmartData(): Promise<SmartData> {
+    return smartData();
+  }
+
+  /**
+   * Scripts the SmartAI picker can offer. `search` matches creature, game
+   * object and quest names (resolved to entries) as well as the script comments
+   * and a numeric entry, so "Hogger" finds his script without knowing id 448.
+   */
+  async smartScripts(request: SmartScriptRequest): Promise<SmartScriptSummary[]> {
+    const search = String(request?.search ?? '').trim();
+    const limit = Math.min(200, Math.max(1, Number(request?.limit ?? 40) || 40));
+    const numeric = /^-?\d+$/.test(search) ? search : null;
+    const entries: (number | string)[] = [];
+    if (search && !numeric) {
+      const data = trySmartData();
+      const candidates = new Set<string>();
+      for (const source of data?.sourceTypes ?? []) if (source.entity) candidates.add(source.entity);
+      for (const extra of ['creature', 'gameobject', 'quest']) candidates.add(extra);
+      for (const entity of candidates) {
+        if (!metadataIndex().entities[entity]) continue;
+        try {
+          const items = await this.lookup({ entity, search, limit: 60 });
+          entries.push(...items.map((item) => item.id));
+        } catch {
+          // A missing lookup table must not break the picker.
+        }
+      }
+    }
+    const summaries = await this.source.smartScripts({ search, sourceType: request?.sourceType, limit, entries });
+    const data = trySmartData();
+    const byEntity = new Map<string, Set<string>>();
+    for (const summary of summaries) {
+      const entity = this.scriptEntity(data, summary);
+      if (!entity) continue;
+      const list = byEntity.get(entity) ?? new Set<string>();
+      list.add(String(summary.entryorguid));
+      byEntity.set(entity, list);
+    }
+    const resolved = new Map<string, Record<string, string>>();
+    await Promise.all([...byEntity].map(async ([entity, ids]) => {
+      try { resolved.set(entity, await this.resolveNames(entity, [...ids])); } catch { /* names are optional */ }
+    }));
+    for (const summary of summaries) {
+      const entity = this.scriptEntity(data, summary);
+      const label = data?.sourceTypes.find((source) => source.value === summary.sourceType)?.name ?? null;
+      summary.kind = label;
+      if (!entity) { summary.nameResolved = false; continue; }
+      const name = resolved.get(entity)?.[String(summary.entryorguid)];
+      if (name) { summary.name = name; summary.nameResolved = true; }
+    }
+    return summaries;
+  }
+
+  /** Which entity an entryorguid points at for a given script source type. */
+  private scriptEntity(data: SmartData | null, summary: SmartScriptSummary): string | null {
+    if (!data) return null;
+    const negative = Number(summary.entryorguid) < 0;
+    if (negative) {
+      const entity = data.sourceTypeEntityForNegative?.[String(summary.sourceType)];
+      return entity && metadataIndex().entities[entity] ? entity : null;
+    }
+    const entity = data.sourceTypes.find((source) => source.value === summary.sourceType)?.entity;
+    return entity && metadataIndex().entities[entity] ? entity : null;
   }
 
   async getLedger(): Promise<LedgerState> {

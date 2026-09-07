@@ -1,3 +1,5 @@
+import type { SmartData } from '../shared/smart';
+
 import type {
   ApplyResult,
   AppSettings,
@@ -10,6 +12,8 @@ import type {
   LookupItem,
   LookupRequest,
   MetadataIndex,
+  SmartScriptRequest,
+  SmartScriptSummary,
   QueryRequest,
   QueryResult,
   StageRequest,
@@ -79,6 +83,8 @@ export const api = {
   disconnect: () => call<ConnectionStatus>('disconnect', 'disconnect', [], {}),
   query: (request: QueryRequest) => call<QueryResult>('query', 'query', [request], request),
   lookup: (request: LookupRequest) => call<LookupItem[]>('lookup', 'lookup', [request], request),
+  smartScripts: (request: SmartScriptRequest) => call<SmartScriptSummary[]>('smartScripts', 'smart/scripts', [request], request),
+  getSmartData: () => call<SmartData>('getSmartData', 'smart/data'),
   resolveNames: (entity: string, ids: (number | string)[]) =>
     call<Record<string, string>>('resolveNames', 'resolve-names', [entity, ids], { entity, ids }),
   getLedger: () => call<LedgerState>('getLedger', 'ledger'),

@@ -8,5 +8,7 @@ release/
 .DS_Store
 .vite/
 
+scratch/
+
 playwright-report/
 test-results/

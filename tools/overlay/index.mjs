@@ -716,10 +716,17 @@ export const COLUMN_RULES = [
   { table: 'trainer_spell', column: 'ReqSkillLine', entity: 'skillLine' },
   { table: 'trainer_spell', column: /^ReqAbility\d$/, entity: 'spell' },
   { table: 'smart_scripts', column: 'source_type', valueSet: 'scriptSourceType' },
-  { table: 'smart_scripts', column: 'target_x', editor: 'coordinate' },
-  { table: 'smart_scripts', column: 'target_y', editor: 'coordinate' },
-  { table: 'smart_scripts', column: 'target_z', editor: 'coordinate' },
-  { table: 'smart_scripts', column: 'target_o', editor: 'orientation' },
+  // A SmartAI parameter only means something together with the row's event_type /
+  // action_type, so a fixed enum would be wrong for most rows (the wiki repeats
+  // the SMART_ACTION_* list under every action_param column). The script editor
+  // resolves the options per row from derived/smartai.json instead.
+  { table: 'smart_scripts', column: /^(event|action|target)_param\d$/, noValueSet: true },
+  { table: 'smart_scripts', column: /^(event|action|target)_param_string$/, editor: 'text', noValueSet: true },
+  { table: 'smart_scripts', column: 'comment', editor: 'text', noValueSet: true },
+  { table: 'smart_scripts', column: 'target_x', editor: 'coordinate', noValueSet: true },
+  { table: 'smart_scripts', column: 'target_y', editor: 'coordinate', noValueSet: true },
+  { table: 'smart_scripts', column: 'target_z', editor: 'coordinate', noValueSet: true },
+  { table: 'smart_scripts', column: 'target_o', editor: 'orientation', noValueSet: true },
   { table: /_loot_template$/, column: 'Item', entity: 'item' },
   { table: /_loot_template$/, column: 'Reference', entity: 'referenceLoot' },
   { table: /_loot_template$/, column: 'QuestRequired', valueSet: 'bool' },

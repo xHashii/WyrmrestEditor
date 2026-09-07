@@ -11,6 +11,17 @@ import { APP_ROOT } from '../core/paths.js';
  */
 
 const app = express();
+app.disable('x-powered-by');
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  // Browser mutations must be JSON. Cross-site forms/simple requests cannot
+  // trigger a connection change, discard, export or apply.
+  if (req.method === 'POST' && !req.is('application/json')) {
+    res.status(415).json({ ok: false, error: 'Send requests as application/json.' });
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: '4mb' }));
 
 const wrap =
@@ -44,12 +55,20 @@ app.post('/api/ledger/apply', wrap(async (req) => service.applyToDatabase(req.bo
 app.get('/api/settings', wrap(async () => service.getSettings()));
 app.post('/api/settings', wrap(async (req) => service.saveSettings(req.body ?? {})));
 
+app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'Unknown API route.' }));
+
 // Serve the built renderer when it exists (production / packaged headless use).
 const rendererDir = path.join(APP_ROOT, 'dist', 'renderer');
 if (fs.existsSync(rendererDir)) {
   app.use(express.static(rendererDir));
   app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(path.join(rendererDir, 'index.html')));
 }
+
+// JSON parser errors use the same envelope as route/service errors.
+const errors: express.ErrorRequestHandler = (err, _req, res, _next) => {
+  res.status(err.status ?? 500).json({ ok: false, error: err.type === 'entity.parse.failed' ? 'Invalid JSON request body.' : err.message ?? 'Editor service error.' });
+};
+app.use(errors);
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -58,7 +77,10 @@ service
   .restore()
   .catch(() => undefined)
   .finally(() => {
-    app.listen(port, host, () => {
+    const server = app.listen(port, host, () => {
       console.log(`Wyrmrest Editor API listening on http://${host}:${port}`);
     });
+    const shutdown = () => { server.close(() => { void service.shutdown().finally(() => process.exit(0)); }); };
+    process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
   });

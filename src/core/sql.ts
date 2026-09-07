@@ -1,4 +1,6 @@
 import type { CellValue, ColumnMeta, Row, StagedChange, TableMeta } from '../shared/types.js';
+import { insertKey, sameValue } from '../shared/values.js';
+export { sameValue } from '../shared/values.js';
 
 /**
  * SQL rendering. Everything the editor writes to disk (or applies to a live
@@ -55,30 +57,47 @@ export function formatValue(column: ColumnMeta | undefined, value: CellValue): s
 
   const kind = column?.kind;
   if (kind === 'integer') {
-    if (typeof value === 'number') return String(Math.trunc(value));
+    if (typeof value === 'number') {
+      if (!Number.isSafeInteger(value)) throw new Error(`${column?.name}: unsafe or invalid integer`);
+      return String(value);
+    }
     const text = String(value).trim();
-    return /^-?\d+$/.test(text) ? text : escapeString(text);
+    if (!/^-?\d+$/.test(text)) throw new Error(`${column?.name}: invalid integer`);
+    return text;
   }
   if (kind === 'float') {
+    if (/^(decimal|numeric)$/i.test(column?.baseType ?? '') && /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(String(value))) return String(value);
     const num = typeof value === 'number' ? value : Number(String(value).trim());
     if (Number.isFinite(num)) {
       // Keep float columns readable: 1 rather than 1.0000000000, but never
       // lose precision for values like 1.14286.
       return String(num);
     }
-    return escapeString(String(value));
+    throw new Error(`${column?.name}: invalid number`);
   }
+  if (kind === 'binary' && value === '0x') return "X''";
   if (kind === 'binary' && typeof value === 'string' && /^0x[0-9a-f]*$/i.test(value)) return value;
 
-  if (typeof value === 'number') return String(value);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Cannot write a non-finite SQL value');
+    return String(value);
+  }
   return escapeString(String(value));
 }
 
-const columnOf = (table: TableMeta, name: string) => table.columns.find((c) => c.name === name);
+const columnOf = (table: TableMeta, name: string): ColumnMeta => {
+  const column = table.columns.find((c) => c.name === name);
+  if (!column) throw new Error(`unknown column ${table.name}.${name}`);
+  return column;
+};
 
 function whereClause(table: TableMeta, key: Record<string, CellValue>): string {
   const entries = Object.entries(key);
-  if (!entries.length) throw new Error(`cannot address a row in ${table.name} without key columns`);
+  const required = table.identityColumns.length ? table.identityColumns : table.columns.map((c) => c.name);
+  if (!entries.length || required.some((c) => !Object.hasOwn(key, c))) {
+    throw new Error(`cannot address a row in ${table.name} without all key columns`);
+  }
+  for (const [name] of entries) columnOf(table, name);
   return entries
     .map(([col, value]) =>
       value === null
@@ -89,7 +108,9 @@ function whereClause(table: TableMeta, key: Record<string, CellValue>): string {
 }
 
 export function renderInsert(table: TableMeta, row: Row): string {
-  const columns = table.columns.filter((c) => row[c.name] !== undefined);
+  for (const name of Object.keys(row)) columnOf(table, name);
+  const columns = table.columns.filter((c) => row[c.name] !== undefined &&
+    !(c.autoIncrement && (row[c.name] == null || String(row[c.name]) === '0')));
   const names = columns.map((c) => quoteIdent(c.name)).join(', ');
   const values = columns.map((c) => formatValue(c, row[c.name] ?? null)).join(', ');
   return `INSERT INTO ${quoteIdent(table.name)} (${names}) VALUES (${values});`;
@@ -104,22 +125,11 @@ export function renderUpdate(
     .filter(([, v]) => !sameValue(v.before, v.after))
     .map(([col, v]) => `${quoteIdent(col)}=${formatValue(columnOf(table, col), v.after)}`);
   if (!sets.length) return '';
-  return `UPDATE ${quoteIdent(table.name)} SET ${sets.join(', ')} WHERE ${whereClause(table, key)};`;
+  return `UPDATE ${quoteIdent(table.name)} SET ${sets.join(', ')} WHERE ${whereClause(table, key)}${table.identityColumns.length ? '' : ' LIMIT 1'};`;
 }
 
 export function renderDelete(table: TableMeta, key: Record<string, CellValue>): string {
-  return `DELETE FROM ${quoteIdent(table.name)} WHERE ${whereClause(table, key)};`;
-}
-
-export function sameValue(a: CellValue, b: CellValue): boolean {
-  if (a === b) return true;
-  if (a === null || b === null || a === undefined || b === undefined) return false;
-  if (typeof a === 'number' || typeof b === 'number') {
-    const na = Number(a);
-    const nb = Number(b);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
-  }
-  return String(a) === String(b);
+  return `DELETE FROM ${quoteIdent(table.name)} WHERE ${whereClause(table, key)}${table.identityColumns.length ? '' : ' LIMIT 1'};`;
 }
 
 /**
@@ -127,11 +137,13 @@ export function sameValue(a: CellValue, b: CellValue): boolean {
  * inserts are preceded by a DELETE so the file can be replayed safely.
  */
 export function renderChange(table: TableMeta, change: StagedChange): string[] {
+  if (table.readOnly) throw new Error(`${table.name} is read-only`);
   switch (change.kind) {
     case 'insert': {
       const row = change.snapshot ?? {};
       const statements: string[] = [];
-      if (Object.keys(change.key).length) statements.push(renderDelete(table, change.key));
+      const key = insertKey(table, row);
+      if (Object.keys(key).length) statements.push(renderDelete(table, key));
       statements.push(renderInsert(table, row));
       return statements;
     }

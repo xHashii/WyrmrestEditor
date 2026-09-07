@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tableMeta } from './metadata.js';
 import { renderChange } from './sql.js';
+import { insertKey, versionError } from '../shared/values.js';
+import { DATABASES } from '../shared/types.js';
 import type {
   DatabaseName,
   ExportRequest,
@@ -22,6 +24,9 @@ import type {
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 
 export function updateDirFor(root: string, database: DatabaseName, version: string): string {
+  const error = versionError(version);
+  if (error) throw new Error(error);
+  if (!DATABASES.includes(database)) throw new Error('Unknown export database');
   return path.join(root, 'sql', 'updates', database, version);
 }
 
@@ -29,7 +34,7 @@ export function nextFileName(dir: string, database: DatabaseName, when = new Dat
   const datePart = `${when.getFullYear()}_${pad(when.getMonth() + 1)}_${pad(when.getDate())}`;
   let sequence = 0;
   if (fs.existsSync(dir)) {
-    const re = new RegExp(`^${datePart}_(\\d{2})_${database}\\.sql$`);
+    const re = new RegExp(`^${datePart}_(\\d{2,})_${database}\\.sql$`);
     for (const file of fs.readdirSync(dir)) {
       const m = re.exec(file);
       if (m) sequence = Math.max(sequence, Number(m[1]) + 1);
@@ -37,6 +42,8 @@ export function nextFileName(dir: string, database: DatabaseName, when = new Dat
   }
   return `${datePart}_${pad(sequence)}_${database}.sql`;
 }
+
+const commentText = (text: string) => text.replace(/[\r\n]+/g, '\n-- ');
 
 function header(database: DatabaseName, version: string, changes: StagedChange[], author: string): string {
   const counts = { insert: 0, update: 0, delete: 0 } as Record<string, number>;
@@ -47,7 +54,7 @@ function header(database: DatabaseName, version: string, changes: StagedChange[]
     '-- Wyrmrest Editor — staged change export',
     `-- Database : ${database} (${version})`,
     `-- Generated: ${new Date().toISOString()}`,
-    author ? `-- Author   : ${author}` : null,
+    author ? `-- Author   : ${commentText(author)}` : null,
     `-- Changes  : ${changes.length} (${counts.insert} insert, ${counts.update} update, ${counts.delete} delete)`,
     `-- Tables   : ${tables.join(', ')}`,
     '-- ---------------------------------------------------------------------',
@@ -72,7 +79,10 @@ export function renderChanges(database: DatabaseName, changes: StagedChange[], v
     const meta = tableMeta(database, table);
     const lines: string[] = [`-- ${meta.name}${meta.label && meta.label !== meta.name ? ` (${meta.label})` : ''}`];
     for (const change of byTable.get(table)!) {
-      if (change.note) lines.push(`-- ${change.note}`);
+      if (change.note) lines.push(`-- ${commentText(change.note)}`);
+      if (change.kind === 'insert' && !Object.keys(insertKey(meta, change.snapshot ?? {})).length) {
+        lines.push('-- No explicit unique key: this INSERT is not replay-safe. Review before running more than once.');
+      }
       for (const statement of renderChange(meta, change)) {
         lines.push(statement);
         statements++;
@@ -103,11 +113,6 @@ export function exportChanges(
     const { sql, statements } = renderChanges(database, list, options.version, options.author);
     const absolute = path.join(dir, fileName);
 
-    if (!options.dryRun) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(absolute, sql, 'utf8');
-    }
-
     files.push({
       database,
       path: absolute,
@@ -116,6 +121,24 @@ export function exportChanges(
       changeCount: list.length,
       statementCount: statements,
     });
+  }
+
+  if (!options.dryRun) {
+    const created: string[] = [];
+    try {
+      for (const file of files) {
+        fs.mkdirSync(path.dirname(file.path), { recursive: true });
+        const descriptor = fs.openSync(file.path, 'wx');
+        created.push(file.path);
+        try { fs.writeFileSync(descriptor, file.sql, 'utf8'); }
+        finally { fs.closeSync(descriptor); }
+      }
+    } catch (err) {
+      // Never leave a half-written multi-database patch or delete a preexisting
+      // file. Only paths exclusively created by this export are rolled back.
+      for (const file of created) fs.rmSync(file, { force: true });
+      throw err;
+    }
   }
 
   return { files, dryRun: Boolean(options.dryRun), exportedAt: when.toISOString() };

@@ -21,8 +21,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
-    minWidth: 1100,
-    minHeight: 700,
+    minWidth: 800,
+    minHeight: 600,
     backgroundColor: '#12151c',
     title: 'Wyrmrest Editor',
     autoHideMenuBar: false,
@@ -30,20 +30,28 @@ function createWindow(): void {
       preload: path.join(__dirname, '..', 'preload', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   if (devServer) {
-    void mainWindow.loadURL(devServer);
+    void mainWindow.loadURL(devServer).catch((err) => dialog.showErrorBox('Could not load Wyrmrest Editor', err.message));
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    void mainWindow.loadFile(path.join(APP_ROOT, 'dist', 'renderer', 'index.html'));
+    void mainWindow.loadFile(path.join(APP_ROOT, 'dist', 'renderer', 'index.html')).catch((err) => dialog.showErrorBox('Could not load Wyrmrest Editor', err.message));
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowed = devServer && new URL(url).origin === new URL(devServer).origin;
+    if (!allowed) {
+      event.preventDefault();
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -173,8 +181,9 @@ const handlers: Record<string, Handler> = {
 };
 
 for (const [name, handler] of Object.entries(handlers)) {
-  ipcMain.handle(`wyrmrest:${name}`, async (_event, ...args) => {
+  ipcMain.handle(`wyrmrest:${name}`, async (event, ...args) => {
     try {
+      if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Untrusted IPC sender');
       return { ok: true, data: await handler(...args) };
     } catch (err) {
       return { ok: false, error: (err as Error).message };

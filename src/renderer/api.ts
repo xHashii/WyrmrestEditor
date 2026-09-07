@@ -34,16 +34,27 @@ declare global {
   }
 }
 
-export const isDesktop = (): boolean => Boolean(window.wyrmrest?.isDesktop);
+export const isDesktop = (): boolean => typeof window !== 'undefined' && Boolean(window.wyrmrest?.isDesktop);
 
-async function viaHttp<T>(path: string, body?: unknown, method: 'GET' | 'POST' = body ? 'POST' : 'GET'): Promise<T> {
-  const response = await fetch(`/api/${path}`, {
-    method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const payload = await response.json().catch(() => ({ ok: false, error: response.statusText }));
-  if (!payload.ok) throw new Error(payload.error ?? `request failed: ${path}`);
+async function viaHttp<T>(path: string, body?: unknown, method: 'GET' | 'POST' = body !== undefined ? 'POST' : 'GET'): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/${path}`, {
+      method,
+      headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
+      throw new Error('The editor service did not respond within 30 seconds. A requested operation may still be running; refresh the workspace before retrying.');
+    }
+    throw new Error('Cannot reach the editor service. Check that it is running and your network connection is available.');
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.ok !== true) {
+    throw new Error(payload?.error || `The editor service returned an invalid response (HTTP ${response.status}) for ${path}.`);
+  }
   return payload.data as T;
 }
 

@@ -1,6 +1,6 @@
 import { tableMeta } from './metadata.js';
 import { formatValue, quoteIdent } from './sql.js';
-import { coerceForColumn, demoRows } from './demo-data.js';
+import { demoRows } from './demo-data.js';
 import type {
   CellValue,
   ConnectionProfile,
@@ -35,6 +35,7 @@ export interface DataSource {
     options: { search?: string; ids?: (number | string)[]; limit?: number },
   ): Promise<LookupItem[]>;
   execute(database: DatabaseName, sql: string): Promise<void>;
+  executeBatch(database: DatabaseName, table: string, statements: string[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -53,7 +54,7 @@ interface BuiltQuery {
   meta: TableMeta;
 }
 
-function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
+export function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
   const clauses: string[] = [];
   const params: CellValue[] = [];
 
@@ -81,18 +82,27 @@ function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
         break;
       case 'in': {
         const values = Array.isArray(filter.value) ? filter.value : [filter.value ?? null];
-        if (!values.length) break;
+        if (!values.length) { clauses.push('1=0'); break; }
         clauses.push(`${ident} IN (${values.map(() => '?').join(', ')})`);
         params.push(...(values as CellValue[]));
         break;
       }
       case 'bitAnd':
         clauses.push(`(${ident} & ?) <> 0`);
-        params.push(Number(filter.value ?? 0));
+        params.push(String(filter.value ?? 0));
+        break;
+      case '=':
+      case '!=':
+      case '>':
+      case '>=':
+      case '<':
+      case '<=':
+        clauses.push(`${ident} ${filter.op} ?`);
+        if (Array.isArray(filter.value)) throw new Error('This filter expects one value');
+        params.push((filter.value ?? null) as CellValue);
         break;
       default:
-        clauses.push(`${ident} ${filter.op} ?`);
-        params.push((filter.value ?? null) as CellValue);
+        throw new Error(`Unknown filter operator: ${filter.op}`);
     }
   }
 
@@ -104,7 +114,7 @@ function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
       const isKey = meta.identityColumns.includes(col.name);
       if (numeric && col.kind === 'integer' && (isKey || col.reference)) {
         searchable.push(`${quoteIdent(col.name)} = ?`);
-        params.push(Number(search));
+        params.push(search);
       } else if (col.kind === 'string' && (col.name === meta.nameColumn || /name|title|text|comment|description/i.test(col.name))) {
         searchable.push(`${quoteIdent(col.name)} LIKE ?`);
         params.push(`%${search}%`);
@@ -113,8 +123,8 @@ function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
     if (searchable.length) clauses.push(`(${searchable.join(' OR ')})`);
     else if (numeric && meta.identityColumns.length) {
       clauses.push(`${quoteIdent(meta.identityColumns[0])} = ?`);
-      params.push(Number(search));
-    }
+      params.push(search);
+    } else clauses.push('1=0');
   }
 
   const orderParts = (request.orderBy ?? [])
@@ -130,6 +140,12 @@ function buildWhere(meta: TableMeta, request: QueryRequest): BuiltQuery {
     order: orderParts ? ` ORDER BY ${orderParts}` : fallbackOrder ? ` ORDER BY ${fallbackOrder}` : '',
     meta,
   };
+}
+
+function pageNumber(value: number | undefined, fallback: number, minimum: number, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || value < minimum) throw new Error('Invalid pagination value');
+  return Math.min(value, maximum);
 }
 
 /** Interpolate params purely for display, so the UI can show the real query. */
@@ -187,14 +203,15 @@ export class MySqlDataSource implements DataSource {
     delete (status.profile as unknown as Record<string, unknown>).password;
 
     const source = new MySqlDataSource(profile, mysql, status);
-    for (const db of DATABASES) {
+    await Promise.all(DATABASES.map(async (db) => {
       const schema = profile.databases[db];
       if (!schema) {
         status.databases[db] = { available: false, tables: 0, error: 'not configured' };
-        continue;
+        return;
       }
+      let pool: any;
       try {
-        const pool = mysql.createPool({
+        pool = mysql.createPool({
           host: profile.host,
           port: profile.port,
           user: profile.user,
@@ -202,6 +219,7 @@ export class MySqlDataSource implements DataSource {
           database: schema,
           waitForConnections: true,
           connectionLimit: 4,
+          connectTimeout: 5000,
           dateStrings: true,
           supportBigNumbers: true,
           bigNumberStrings: true,
@@ -214,9 +232,10 @@ export class MySqlDataSource implements DataSource {
         source.pools.set(db, pool);
         status.connected = true;
       } catch (err) {
+        if (pool) await pool.end().catch(() => undefined);
         status.databases[db] = { available: false, tables: 0, error: (err as Error).message };
       }
-    }
+    }));
     if (!status.connected) {
       const first = Object.values(status.databases).find((d) => d?.error);
       throw new Error(first?.error ?? 'could not connect to any configured schema');
@@ -238,8 +257,8 @@ export class MySqlDataSource implements DataSource {
   async query(request: QueryRequest): Promise<QueryResult> {
     const meta = tableMeta(request.database, request.table);
     const { where, params, order } = buildWhere(meta, request);
-    const limit = Math.min(request.limit ?? 100, MAX_LIMIT);
-    const offset = Math.max(request.offset ?? 0, 0);
+    const limit = pageNumber(request.limit, 100, 1, MAX_LIMIT);
+    const offset = pageNumber(request.offset, 0, 0);
     const started = Date.now();
     const pool = this.pool(request.database);
 
@@ -257,7 +276,8 @@ export class MySqlDataSource implements DataSource {
     }
 
     return {
-      rows: rows as Row[],
+      rows: (rows as Record<string, unknown>[]).map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
+        [key, Buffer.isBuffer(value) ? `0x${value.toString('hex').toUpperCase()}` : value as CellValue]))),
       total,
       offset,
       limit,
@@ -275,11 +295,12 @@ export class MySqlDataSource implements DataSource {
     options: { search?: string; ids?: (number | string)[]; limit?: number },
   ): Promise<LookupItem[]> {
     const meta = tableMeta(database, table);
-    const limit = Math.min(options.limit ?? 50, 200);
+    const limit = pageNumber(options.limit, 50, 1, 200);
     const cols = [idColumn, ...nameColumns].map((c) => quoteIdent(validateColumn(meta, c)));
     const params: CellValue[] = [];
     const clauses: string[] = [];
 
+    if (options.ids && !options.ids.length) return [];
     if (options.ids?.length) {
       clauses.push(`${quoteIdent(idColumn)} IN (${options.ids.map(() => '?').join(', ')})`);
       params.push(...(options.ids as CellValue[]));
@@ -289,7 +310,7 @@ export class MySqlDataSource implements DataSource {
       const parts: string[] = [];
       if (/^-?\d+$/.test(search)) {
         parts.push(`${quoteIdent(idColumn)} = ?`);
-        params.push(Number(search));
+        params.push(search);
       }
       for (const name of nameColumns) {
         const col = meta.columns.find((c) => c.name === name);
@@ -311,6 +332,27 @@ export class MySqlDataSource implements DataSource {
     await this.pool(database).query(sql);
   }
 
+  async executeBatch(database: DatabaseName, table: string, statements: string[]): Promise<void> {
+    const connection = await this.pool(database).getConnection();
+    try {
+      const [engines] = await connection.query(
+        'SELECT ENGINE AS engine FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [table]);
+      if (String(engines[0]?.engine).toLowerCase() !== 'innodb') {
+        throw new Error(`${table}: safe live apply requires an InnoDB table. Export SQL for manual review instead.`);
+      }
+      await connection.beginTransaction();
+      try {
+        for (const sql of statements) await connection.query(sql);
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      }
+    } finally {
+      connection.release();
+    }
+  }
+
   async close(): Promise<void> {
     for (const pool of this.pools.values()) await pool.end().catch(() => undefined);
     this.pools.clear();
@@ -320,6 +362,20 @@ export class MySqlDataSource implements DataSource {
 // ---------------------------------------------------------------------------
 // Offline demo
 // ---------------------------------------------------------------------------
+
+function sqlLike(value: string, pattern: string): boolean {
+  let regex = '^';
+  let escaped = false;
+  for (const char of pattern) {
+    if (!escaped && char === '\\') { escaped = true; continue; }
+    if (!escaped && char === '%') regex += '.*';
+    else if (!escaped && char === '_') regex += '.';
+    else regex += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    escaped = false;
+  }
+  if (escaped) regex += '\\\\';
+  return new RegExp(regex + '$', 'is').test(value);
+}
 
 function matchesFilter(row: Row, filter: FilterClause): boolean {
   const value = row[filter.column];
@@ -334,11 +390,11 @@ function matchesFilter(row: Row, filter: FilterClause): boolean {
     case 'startsWith':
       return String(value ?? '').toLowerCase().startsWith(String(target ?? '').toLowerCase());
     case 'like':
-      return new RegExp(`^${String(target ?? '').replace(/%/g, '.*').replace(/_/g, '.')}$`, 'i').test(String(value ?? ''));
+      return sqlLike(String(value ?? ''), String(target ?? ''));
     case 'in':
       return (Array.isArray(filter.value) ? filter.value : [filter.value]).some((v) => String(v) === String(value));
     case 'bitAnd':
-      return (Number(value ?? 0) & Number(target ?? 0)) !== 0;
+      try { return (BigInt(String(value ?? 0)) & BigInt(String(target ?? 0))) !== 0n; } catch { return false; }
     case '!=':
       return String(value) !== String(target);
     case '>':
@@ -376,8 +432,8 @@ export class DemoDataSource implements DataSource {
     let rows = [...demoRows(request.database, request.table)];
 
     for (const filter of request.filters ?? []) {
-      validateColumn(meta, filter.column);
-      rows = rows.filter((row) => matchesFilter(row, filter));
+      const column = validateColumn(meta, filter.column);
+      rows = rows.filter((row) => matchesFilter(row, { ...filter, column }));
     }
 
     const search = request.search?.trim().toLowerCase();
@@ -405,13 +461,13 @@ export class DemoDataSource implements DataSource {
       });
     }
 
-    const offset = Math.max(request.offset ?? 0, 0);
-    const limit = Math.min(request.limit ?? 100, MAX_LIMIT);
+    const offset = pageNumber(request.offset, 0, 0);
+    const limit = pageNumber(request.limit, 100, 1, MAX_LIMIT);
     const page = rows.slice(offset, offset + limit);
     const { where, params, order } = buildWhere(meta, request);
 
     return {
-      rows: page,
+      rows: structuredClone(page),
       total: rows.length,
       offset,
       limit,
@@ -440,7 +496,7 @@ export class DemoDataSource implements DataSource {
       if (String(row[idColumn]) === search) return true;
       return nameColumns.some((n) => String(row[n] ?? '').toLowerCase().includes(search));
     });
-    return filtered.slice(0, options.limit ?? 50).map((row) => toLookupItem(row, idColumn, nameColumns));
+    return filtered.slice(0, pageNumber(options.limit, 50, 1, 200)).map((row) => toLookupItem(row, idColumn, nameColumns));
   }
 
   async execute(database: DatabaseName, sql: string): Promise<void> {
@@ -453,23 +509,10 @@ export class DemoDataSource implements DataSource {
     /* nothing to close */
   }
 
-  /** Used by the service so staged inserts/edits show up while demoing. */
-  applyToMemory(database: DatabaseName, table: string, kind: 'insert' | 'update' | 'delete', key: Record<string, CellValue>, values: Row): void {
-    const meta = tableMeta(database, table);
-    const rows = demoRows(database, table);
-    const index = rows.findIndex((row) => Object.entries(key).every(([k, v]) => String(row[k]) === String(v)));
-    if (kind === 'delete') {
-      if (index >= 0) rows.splice(index, 1);
-      return;
-    }
-    if (kind === 'insert') {
-      rows.push(values);
-      return;
-    }
-    if (index >= 0) {
-      for (const [k, v] of Object.entries(values)) rows[index][k] = coerceForColumn(meta, k, v);
-    }
+  async executeBatch(database: DatabaseName, _table: string, statements: string[]): Promise<void> {
+    await this.execute(database, statements[0] ?? '');
   }
+
 }
 
 function toLookupItem(row: Row, idColumn: string, nameColumns: string[]): LookupItem {

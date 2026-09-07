@@ -2,7 +2,7 @@
   "name": "wyrmrest-editor",
   "version": "0.2.0",
   "private": true,
-  "description": "Wyrmrest Editor — a TrinityCore 3.4.3 database editor with staged changes and sql/updates export",
+  "description": "Wyrmrest Editor \u2014 a TrinityCore 3.4.3 database editor with staged changes and sql/updates export",
   "author": "Wyrmrest Editor contributors",
   "license": "GPL-2.0-only",
   "main": "dist/node/main/main.js",
@@ -26,12 +26,19 @@
     "start": "node dist/node/server/index.js",
     "package": "npm run build && electron-builder",
     "package:dir": "npm run build && electron-builder --dir",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --import tsx --test tests/*.test.mjs",
+    "pretest": "npm run build",
+    "test:browser": "playwright test",
+    "check": "npm run typecheck && npm test",
+    "pretest:browser": "npm run build"
   },
   "dependencies": {
+    "express": "^4.21.2",
     "mysql2": "^3.11.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
     "@tanstack/react-virtual": "^3.10.9",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
@@ -40,9 +47,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
-    "express": "^4.21.2",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^30.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -53,6 +59,9 @@
     "zustand": "^5.0.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

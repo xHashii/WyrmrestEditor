@@ -46,11 +46,24 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build
-        run: npm run build
-
-      - name: Test
+      # npm test builds first so bundle-driven tests cannot pass by skipping.
+      - name: Build and test core / shipped UI
         run: npm test
+
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser workflows, responsive layouts and accessibility
+        run: npx playwright test
+
+      - name: Upload browser failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   installers:
     name: ${{ matrix.name }}

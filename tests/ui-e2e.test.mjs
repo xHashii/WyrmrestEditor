@@ -225,7 +225,9 @@ test('flag editor, ID picker and table palette', { skip: ready ? false : 'run `n
   const grid = doc.querySelector('.grid');
   const press = (key, init = {}) =>
     grid.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, ...init }));
-  click(cellFor(0, 'name')); // select a starting cell
+  // Identity and the name now lead the grid; start on a neighboring text
+  // field so ArrowRight still targets an inline (rather than reference) editor.
+  click(cellFor(0, 'femaleName'));
   await settle(120);
   press('ArrowDown');
   press('ArrowRight');

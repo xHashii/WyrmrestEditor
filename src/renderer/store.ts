@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
+import { addRecent, loadRecent, recentSource, saveRecent, type RecentItem } from './recent';
 import type { SmartData } from '../shared/smart';
 import type { SearchScope } from '../shared/search';
 import { defaultRow, identityKey, insertKey, integerValue, keyValues, parseCellValue, sameValue, valueText } from '../shared/values';
@@ -22,6 +23,9 @@ const NO_SCRIPT: SmartViewState = { view: 'grid', entryorguid: null, sourceType:
 export interface GridRow { key: string; row: Row; origin: 'db' | 'staged-insert'; change: StagedChange | null; ambiguous?: boolean }
 
 interface State {
+  workspaceView: 'quick-start' | 'editor';
+  recentItems: RecentItem[];
+  historySaved: boolean;
   ready: boolean;
   error: string | null;
   index: MetadataIndex | null;
@@ -62,6 +66,11 @@ interface State {
   toast: { kind: 'info' | 'error' | 'success'; message: string } | null;
 
   init(): Promise<void>;
+  showQuickStart(): void;
+  resumeEditor(): void;
+  rememberItem(item: RecentItem): void;
+  clearRecentItems(): void;
+  openSmartEditor(script?: { entryorguid: string; sourceType: number }): Promise<void>;
   setDatabase(db: DatabaseName): void;
   openTable(database: DatabaseName, table: string): Promise<void>;
   refresh(): Promise<void>;
@@ -69,7 +78,7 @@ interface State {
   setSearchScope(scope: SearchScope): void;
   ensureSmartData(): Promise<SmartData | null>;
   setSmartView(view: SmartView): Promise<void>;
-  selectScript(entryorguid: string, sourceType: number, subject?: string | null): Promise<void>;
+  selectScript(entryorguid: string, sourceType: number, subject?: string | null): Promise<boolean>;
   /** Cache display names for these ids of one entity (SmartAI chips, spell areas). */
   resolveNamesFor(entity: string, ids: (string | number)[]): Promise<void>;
   clearScript(): void;
@@ -167,6 +176,7 @@ async function stageNewRow(meta: TableMeta, values: Row, note: string): Promise<
 }
 
 export const useStore = create<State>((set, get) => ({
+  workspaceView: 'quick-start', recentItems: [], historySaved: true,
   ready: false, error: null, index: null, entities: {}, catalogue: [], status: null, settings: null,
   database: 'world', tableName: null, meta: null, result: null,
   navigationToken: 0, queryToken: 0, sourceToken: 0, loading: false, queryError: null, editError: null,
@@ -181,8 +191,7 @@ export const useStore = create<State>((set, get) => ({
       try {
         const [index, status, settings, ledger] = await Promise.all([api.getIndex(), api.getStatus(), api.getSettings(), api.getLedger()]);
         set({ index, entities: index.entities, catalogue: index.tables, status, settings, ledger: ledger.changes,
-          ledgerUpdatedAt: ledger.updatedAt, ready: true });
-        await get().openTable('world', 'creature_template');
+          ledgerUpdatedAt: ledger.updatedAt, ready: true, recentItems: loadRecent(), workspaceView: 'quick-start' });
       } catch (err) {
         set({ error: (err as Error).message, ready: true });
       }
@@ -190,8 +199,33 @@ export const useStore = create<State>((set, get) => ({
     try { await initialization; } finally { initialization = null; }
   },
 
+  showQuickStart() {
+    clearTimeout(searchTimer);
+    // Invalidate pending navigation so a late load cannot take the user home → editor.
+    set({ workspaceView: 'quick-start', navigationToken: get().navigationToken + 1, queryToken: get().queryToken + 1,
+      loading: false, editing: null, editError: null, dialog: null });
+  },
+  resumeEditor() {
+    const { tableName, database, meta, smart } = get();
+    if (!tableName) return;
+    set({ workspaceView: 'editor' });
+    if (smart.view === 'script' && (!meta || smart.entryorguid === null)) {
+      void get().openSmartEditor(smart.entryorguid === null ? undefined : { entryorguid: smart.entryorguid, sourceType: smart.sourceType ?? 0 });
+    } else if (!meta) void get().openTable(database, tableName);
+    else void get().refresh();
+  },
+  rememberItem(item) {
+    const recentItems = addRecent(get().recentItems, item);
+    set({ recentItems, historySaved: saveRecent(recentItems) });
+  },
+  clearRecentItems() {
+    const source = recentSource(get().status);
+    const recentItems = get().recentItems.filter((item) => item.source !== source);
+    set({ recentItems, historySaved: saveRecent(recentItems) });
+  },
   setDatabase(database) {
-    if (database === get().database) return;
+    if (database === get().database && get().workspaceView === 'editor') return;
+    if (database === get().database && get().tableName) { get().resumeEditor(); return; }
     const defaults: Record<DatabaseName, string> = { world: 'creature_template', auth: 'account', characters: 'characters', hotfixes: 'item_sparse' };
     void get().openTable(database, get().lastTables[database] ?? defaults[database]);
   },
@@ -199,7 +233,7 @@ export const useStore = create<State>((set, get) => ({
   async openTable(database, tableName) {
     clearTimeout(searchTimer);
     const token = get().navigationToken + 1;
-    set({ database, tableName, meta: null, result: null, loading: true, queryError: null, editError: null,
+    set({ workspaceView: 'editor', database, tableName, meta: null, result: null, loading: true, queryError: null, editError: null,
       navigationToken: token, queryToken: get().queryToken + 1, offset: 0, search: '', searchScope: get().searchScope, filters: [], orderBy: [], selected: null, editing: null,
       smart: NO_SCRIPT, lastTables: { ...get().lastTables, [database]: tableName } });
     try {
@@ -209,6 +243,7 @@ export const useStore = create<State>((set, get) => ({
       // The script editor needs its definition data before it can open.
       if (database === 'world' && tableName === 'smart_scripts') void get().ensureSmartData();
       await get().refresh();
+      if (get().navigationToken === token && !get().queryError) get().rememberItem({ kind: 'table', source: recentSource(get().status), database, table: tableName, label: meta.label });
     } catch (err) {
       if (get().navigationToken !== token) return;
       set({ queryError: (err as Error).message, loading: false, meta: null, result: null });
@@ -268,29 +303,67 @@ export const useStore = create<State>((set, get) => ({
       return null;
     }
   },
+  async openSmartEditor(script) {
+    clearTimeout(searchTimer);
+    const token = get().navigationToken + 1;
+    const sourceToken = get().sourceToken;
+    set({ workspaceView: 'editor', database: 'world', tableName: 'smart_scripts', meta: null, result: null,
+      navigationToken: token, queryToken: get().queryToken + 1, loading: true, queryError: null, editError: null,
+      smart: { ...NO_SCRIPT, view: 'script' }, search: '', filters: [], orderBy: [], offset: 0, selected: null, editing: null,
+      lastTables: { ...get().lastTables, world: 'smart_scripts' } });
+    try {
+      const [meta, data] = await Promise.all([api.getTable('world', 'smart_scripts'), get().ensureSmartData()]);
+      if (get().navigationToken !== token || get().sourceToken !== sourceToken) return;
+      if (!data) throw new Error(get().smartDataError ?? 'SmartAI definitions could not be loaded.');
+      set({ meta, loading: false });
+      // No unfiltered table query: the quick loader chooses a whole script first.
+      if (script) await get().selectScript(script.entryorguid, script.sourceType);
+    } catch (err) {
+      if (get().navigationToken !== token || get().sourceToken !== sourceToken) return;
+      set({ queryError: (err as Error).message, loading: false });
+    }
+  },
   async setSmartView(view) {
     const state = get();
-    if (state.smart.view === view) return;
+    if (state.meta?.database !== 'world' || state.meta.name !== 'smart_scripts' || state.smart.view === view) return;
     if (view === 'script') {
       const data = await state.ensureSmartData();
-      if (!data) { state.notify('error', state.smartDataError ?? 'SmartAI definitions could not be loaded.'); return; }
-      set({ smart: { ...state.smart, view } });
+      if (get().navigationToken !== state.navigationToken || get().workspaceView !== 'editor') return;
+      if (!data) { state.notify('error', get().smartDataError ?? 'SmartAI definitions could not be loaded.'); return; }
+      set({ smart: { ...get().smart, view }, search: '', offset: 0 });
+      if (get().smart.entryorguid !== null) await get().refresh();
       return;
     }
     set({ smart: { ...get().smart, view: 'grid' }, offset: 0 });
-    void get().refresh();
+    await get().refresh();
   },
   async selectScript(entryorguid, sourceType, subject) {
-    const { meta, database, tableName } = get();
-    if (!meta || meta.database !== database || meta.name !== tableName) return;
+    const { meta, navigationToken, sourceToken } = get();
+    if (get().workspaceView !== 'editor' || meta?.database !== 'world' || meta.name !== 'smart_scripts') return false;
+    const data = await get().ensureSmartData();
+    if (get().navigationToken !== navigationToken || get().sourceToken !== sourceToken) return false;
+    if (!data) { get().notify('error', get().smartDataError ?? 'SmartAI definitions could not be loaded.'); return false; }
+    try {
+      const id = parseCellValue(meta.columns.find((column) => column.name === 'entryorguid')!, entryorguid);
+      if (id == null || BigInt(String(id)) === 0n) throw new Error('Enter a non-zero entry ID, or a negative spawn GUID.');
+      if (!data.sourceTypes.some((kind) => kind.value === sourceType)) throw new Error('Choose a supported script kind.');
+      entryorguid = String(id);
+    } catch (err) { get().notify('error', (err as Error).message); return false; }
     set({
       smart: { view: 'script', entryorguid, sourceType, subject: subject ?? null },
       filters: [{ column: 'entryorguid', op: '=', value: entryorguid }, { column: 'source_type', op: '=', value: sourceType }],
       orderBy: [{ column: 'id', direction: 'asc' }],
-      offset: 0, search: '', selected: null, editing: null,
+      offset: 0, search: '', selected: null, editing: null, editError: null,
     });
+    const selection = get().smart;
     await get().refresh();
-    await get().resolvePageNames();
+    if (get().navigationToken !== navigationToken || get().sourceToken !== sourceToken || get().smart !== selection || get().queryError) return false;
+    const entity = data.sourceTypes.find((kind) => kind.value === sourceType)?.entity;
+    if (!subject && entity && BigInt(entryorguid) > 0n) await get().resolveNamesFor(entity, [entryorguid]);
+    if (get().navigationToken !== navigationToken || get().sourceToken !== sourceToken || get().smart !== selection) return false;
+    const resolved = subject || (entity ? get().names[entity]?.[entryorguid] : null);
+    get().rememberItem({ kind: 'script', source: recentSource(get().status), entryorguid, sourceType, label: resolved || `Entry ${entryorguid}` });
+    return true;
   },
   clearScript() {
     set({ smart: { ...get().smart, entryorguid: null, sourceType: null, subject: null }, filters: [], orderBy: [], offset: 0 });
@@ -468,10 +541,16 @@ export const useStore = create<State>((set, get) => ({
     catch (err) { get().notify('error', (err as Error).message); }
   },
   async connectionChanged(status) {
-    set({ status, sourceToken: get().sourceToken + 1, queryToken: get().queryToken + 1, names: {}, result: null, selected: null, editing: null });
+    set({ status, sourceToken: get().sourceToken + 1, navigationToken: get().navigationToken + 1, queryToken: get().queryToken + 1,
+      smart: { ...get().smart, subject: null }, names: {}, result: null, selected: null, editing: null, loading: false });
     const settings = await api.getSettings();
     set({ settings });
-    await get().refresh();
+    const current = get();
+    if (current.workspaceView !== 'editor') return;
+    if (!current.meta && current.tableName) {
+      if (current.smart.view === 'script') await current.openSmartEditor();
+      else await current.openTable(current.database, current.tableName);
+    } else if (current.smart.view !== 'script' || current.smart.entryorguid !== null) await current.refresh();
   },
   async saveSettings(patch) {
     const settings = await api.saveSettings(patch);

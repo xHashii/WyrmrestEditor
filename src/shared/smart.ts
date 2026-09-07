@@ -401,7 +401,7 @@ function renderExpression(expression: string, context: SmartDescriptionContext, 
 
   if (!rest.length) return value;
   const directive = rest.join(':');
-  const choose = /^choose\(([^)]*)\)\s*([\s\S]*)$/.exec(directive.trim());
+  const choose = /^choose\(([^)]*)\)\s*([\s\S]*)$/.exec(directive.trimStart());
   if (!choose) return value;
   const wanted = new Set(choose[1].split('|').map((part) => part.trim()).filter((part) => part !== ''));
   // Branches are spliced back into a sentence, so their padding is meaningful.
@@ -439,7 +439,8 @@ function splitTopLevel(text: string, separator: string): string[] {
     current += char;
   }
   parts.push(current);
-  return parts.map((part) => part.trim());
+  // Keep branch padding: only the expression key is whitespace-insensitive.
+  return parts;
 }
 
 /**
@@ -508,6 +509,7 @@ export function describeSmartSource(
     for (const param of source.params) {
       const value = context.value(param.column);
       if (value === null || value === '' || Number(value) === 0) continue;
+      if (segments.length) segments.push({ type: 'text', text: ' · ' });
       segments.push({ type: 'param', column: param.column, label: param.label, text: displayParam(param, value, context), editor: param.editor, entity: param.entity });
     }
     return segments;
@@ -516,7 +518,7 @@ export function describeSmartSource(
   let emphasis = false;
   const pushText = (text: string) => {
     const clean = text.replace(/\s{2,}/g, ' ');
-    if (clean.trim()) segments.push({ type: emphasis ? 'emphasis' : 'text', text: clean });
+    if (clean) segments.push({ type: emphasis ? 'emphasis' : 'text', text: clean });
   };
   while (index < raw.length) {
     const nextBrace = raw.indexOf('{', index);
@@ -545,9 +547,12 @@ export function describeSmartSource(
     const head = (splitTopLevel(expression, ':')[0] ?? '').trim();
     const paramMatch = /^pram(\d+)(value)?$/.exec(head);
     const param = paramMatch ? (findParam(source, Number.parseInt(paramMatch[1], 10)) ?? findParam(sibling, Number.parseInt(paramMatch[1], 10))) : undefined;
-    const rendered = renderExpression(expression, context, sources as { event?: SmartSource; action?: SmartSource; target?: SmartSource });
-    if (param) {
-      segments.push({ type: 'param', column: param.column, label: param.label, text: rendered || displayParam(param, context.value(param.column), context), editor: param.editor, entity: param.entity });
+    const rendered = renderExpression(expression, context, sources as { event?: SmartSource; action?: SmartSource; target?: SmartSource })
+      .replace(/\[\/?s\]|<\/?\[?s\]?>/gi, '');
+    // An empty choose branch deliberately hides a default parameter. Falling
+    // back to its raw value here glued “none” or “0” onto the previous word.
+    if (param && rendered) {
+      segments.push({ type: 'param', column: param.column, label: param.label, text: rendered, editor: param.editor, entity: param.entity });
     } else if (rendered.trim()) {
       segments.push({ type: emphasis ? 'emphasis' : 'text', text: rendered });
     }

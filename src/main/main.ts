@@ -109,6 +109,9 @@ function buildMenu(): void {
     {
       label: 'View',
       submenu: [
+        { label: 'Quick Start', accelerator: 'CmdOrCtrl+Shift+H', click: () => mainWindow?.webContents.send('wyrmrest:menu', 'quick-start') },
+        { label: 'Load SmartAI script…', click: () => mainWindow?.webContents.send('wyrmrest:menu', 'smartai') },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },

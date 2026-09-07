@@ -75,10 +75,19 @@ test('descriptions resolve parameters to names and keep choose branches readable
     targetLabel: 'Current victim',
   }, 'action');
   const text = segments.map((segment) => segment.text).join('');
-  assert.match(text, /Fireball/);
+  assert.equal(text, 'Hogger: Cast spell Fireball on Current victim', 'hidden default flags and limits must not leak into the sentence');
   assert.match(text, /Hogger/);
   assert.doesNotMatch(text, /pram|\[spell|NULL/, `raw template leaked: ${text}`);
   assert.ok(segments.some((segment) => segment.type === 'param' && segment.column === 'action_param1'), 'the spell must stay clickable');
+});
+
+test('description whitespace survives adjacent parameters and nested conditional branches', () => {
+  const values = { action_param1: 1, action_param2: 0, action_param3: 0 };
+  const action = source('action', 1, values);
+  const context = { value: (column) => values[column] ?? 0, name: () => null, sourceLabel: 'Hogger', sourceId: 448 };
+  const text = smart.describeSmartSource(action, undefined, context, 'action').map((segment) => segment.text).join('');
+  assert.equal(text, 'Hogger: Talk 1 to invoker');
+  assert.equal(smart.describeSmartSource({ ...action, def: { ...action.def, template: '{pram1} {pram2}' } }, undefined, context, 'action').map((segment) => segment.text).join(''), '1 0');
 });
 
 test('a script groups chained actions under their event and keeps loose rows', () => {

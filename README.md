@@ -5,7 +5,7 @@ spirit of WoWDatabaseEditor: browse any table in `auth`, `characters`, `world` a
 cells with editors that understand what each column *means*, and ship the result as a reviewable
 `sql/updates` patch instead of an ad-hoc `UPDATE` typed into a console.
 
-Requires **Node.js 22.12 or newer**.
+Building from source requires **Node.js 22.12 or newer**. Packaged desktop downloads include their own runtime.
 
 ```bash
 npm install            # ELECTRON_SKIP_BINARY_DOWNLOAD=1 if the Electron binary is blocked
@@ -18,6 +18,39 @@ Azeroth (Hogger, Innkeeper Farley, a few quests, gossip menus and SmartAI script
 reverting and SQL export work offline. Applying changes requires a live server.
 
 ---
+
+## Quick Start and quick load
+
+The app opens on a **Quick Start** page inspired by
+[WoWDatabaseEditor's quick-load screen](https://github.com/BAndysc/WoWDatabaseEditor), instead of
+making you discover SmartAI inside a table toolbar.
+
+- **SmartAI editor** is the large primary shortcut. Search existing scripts by name (try **Hogger**
+  in demo mode) or entry ID, and filter by script kind. **Open by ID** loads a specific entry/GUID and
+  source type, including scripts with no rows yet. Negative IDs select creature/game-object spawn
+  GUIDs; timed action lists use their own ID. Opening never stages a change.
+- **Creature templates, Game objects, Quests and Creature dialogue** open their tables directly.
+  **Browse all tables** / **Ctrl/Cmd+K** searches the complete catalogue.
+- **Recently opened** remembers table and script shortcuts for the current demo/server profile.
+  It stores names/IDs locally in the browser or Electron renderer, not passwords, SQL or full rows.
+  Blocked storage falls back to session-only history. **Clear history** never clears staged edits.
+- **Connect a database** opens the existing saved-profile and connection-test dialog.
+- Return here with the always-visible **Quick Start** button, **Ctrl/Cmd+Shift+H**, or desktop
+  **View → Quick Start**. **Return to workspace** keeps the current table/script and filters.
+
+### Reading and editing long text
+
+Buttons, SmartAI descriptions, comments, constants, pickers and toolbars wrap within their pane;
+SmartAI rows stack when side panels leave too little room for side-by-side event/action controls.
+Dialogs and long lists scroll vertically instead of shrinking the text or hiding fields.
+
+The dense table grid still uses compact value previews. Select a cell and choose **Expand / edit
+value** in the row toolbar to read and edit *all* of it in a resizable, multiline dialog, even with the
+Inspector closed. Existing long/multiline text values open that editor directly on double-click,
+Enter or F2. **Ctrl/Cmd+Enter** stages the value; Escape cancels. The Inspector's **Full cell value**,
+original value and **Expand / edit** remain available. SmartAI comments are also clickable and open
+a wrapping, vertically resizable editor. Enum controls repeat their full selected label below the
+field so a narrow native dropdown cannot hide its meaning.
 
 ## What makes it TrinityCore-aware
 
@@ -88,11 +121,11 @@ mirrors the same semantics over its in-memory rows.
 
 ## SmartAI scripts
 
-`smart_scripts` rows are a programming language written in 25 integer columns. On any table that
-owns a script — `creature_template`, `creature`, `gameobject_template`, `gameobject`,
-`quest_template` — the table view gains a **SmartAI** switch that replaces the grid with a row-based
-editor in the style of WoWDatabaseEditor (its SmartData definitions and colour scheme are vendored
-under `tools/vendor/wde-smartdata`, MIT):
+Open **Quick Start → SmartAI editor** (or desktop **View → Load SmartAI script…**) to load a whole
+script by name or ID. The **Table / SmartAI editor** switch is also prominently placed above
+`world.smart_scripts`: select a raw row and choose SmartAI to open its script, or switch back to Table
+to inspect the same filtered rows. The visual editor follows WoWDatabaseEditor (its SmartData
+definitions and colour scheme are vendored under `tools/vendor/wde-smartdata`, MIT):
 
 * **One row per logical event**: `Event · Action · Target` with the comment written out in full —
   `Hogger - On Aggro - Cast Spell (133) with flags`. Parameters render as coloured, labelled chips;
@@ -116,7 +149,7 @@ under `tools/vendor/wde-smartdata`, MIT):
   will be staged.
 
 Editing a script goes through the same staged-changes ledger as any other cell: nothing is written to
-the database until you export or apply the change, and the SQL preview is available before you commit
+the database until you explicitly apply the change (export only writes SQL files), and the SQL preview is available before you commit
 to it.
 
 ## The staged-changes ledger
@@ -209,30 +242,98 @@ Curated knowledge that the wiki cannot give us (extra reference targets, correct
 in `tools/overlay/index.mjs`; the builder fails loudly if an overlay entry points at a table or
 column that does not exist in the dumps.
 
-## Building the Windows executable
+## Desktop builds and automatic GitHub releases
 
-`npm run package` runs electron-builder with `electron-builder.yml`, producing the portable
-`.exe` and an NSIS installer in `release/` (the same job runs on Windows, macOS and Linux in CI —
-see `.github/workflows/build.yml`, which also publishes them to a GitHub release when you push a
-`v*` tag):
+The workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) verifies metadata,
+typechecks, runs the core/UI/browser tests, and builds installers on **Windows, macOS and Linux**.
+Nothing needs to be compiled or uploaded manually on your machine when using GitHub Actions.
+
+### What publishes automatically
+
+| Trigger | Result |
+| --- | --- |
+| Successful push/merge to **`main`** | Refreshes the **Latest development build** prerelease at [`releases/tag/development`](https://github.com/xHashii/WyrmrestEditor/releases/tag/development), with all three platforms and `SHA256SUMS.txt` |
+| Push **`v<package.json version>`** (e.g. `v0.2.0`) | Publishes that versioned release after all checks/builds pass; `-beta.1` / `-rc.1` versions are prereleases |
+| **Actions → build → Run workflow**, `main`, **publish: versioned** | Builds and publishes `v<package.json version>`, creating the tag automatically — no local tag or asset upload needed |
+| Manual **publish: development** on `main` | Rebuilds/refreshes the development prerelease |
+| Other branch pushes, pull requests, or manual **publish: none** | Tests/builds only; download ZIP bundles from the workflow run's **Artifacts** section (kept for 14 days) |
+
+**After merging this workflow to `main`, the next successful main build creates/updates the
+development release.** It remains a prerelease and never takes the “Latest” label away from a
+stable release. Installing/updating the application is still your choice; this is release
+publishing, not an in-app automatic updater.
+
+**One-click stable release:** open **Actions → build → Run workflow**, select **main** and
+**versioned**. The app version comes from `package.json`, not the TrinityCore content version
+`3.4.3`. To publish a newer version later:
+
+```bash
+npm version patch --no-git-tag-version  # updates package.json AND package-lock.json
+# Commit both files with your changes, merge to main, then run “publish: versioned”.
+```
+
+A version tag must match the package version. Published version tags are never moved to another
+commit; bump the version rather than replacing an older release. The publisher requires every
+expected installer to be present and non-empty, attaches SHA-256 checksums, ignores stale/debug/test
+files, and will not publish if verification or any platform build fails. New releases stay drafts
+until uploads succeed; rerun the workflow to recover a failed upload. Rolling builds also avoid
+replacing a newer successful development build with an older matrix run.
+
+Actions uses GitHub's built-in **`GITHUB_TOKEN`**, with **`contents: write` only on the release job**.
+No personal access token or additional secret is needed for unsigned builds. Enable Actions for the
+repository and allow that permission under your repository/organization policy. A `403` during
+publishing means the token/repository policy needs attention. The rolling `development` release
+must remain mutable; if release immutability is enforced, use new versioned releases instead.
+
+### Build on your machine
+
+Build on the target OS for the most reliable result (macOS packaging needs macOS; cross-building
+Windows on Linux can require Wine and additional native tools). On **Windows**:
 
 ```bash
 npm ci
-npm run build
-npm exec --yes -- electron-builder --win --x64 --publish never
+npm run package:win
 ```
 
-The result is `release/WyrmrestEditor-<version>-win-x64.exe` (installer) and
-`…-win-x64-portable.exe`; double-click either, no Node.js or database required — the app starts in
-demo mode and connects to MySQL from its own settings dialog. The executable is unsigned, so Windows
-SmartScreen will ask once ("More info → Run anyway"); code signing is opt-in via
-`CSC_LINK`/`CSC_KEY_PASSWORD`. Nothing is installed system-wide: the ledger, settings and saved
-connections live in `~/.wyrmrest` (`WYRMREST_HOME` overrides it), and the app writes only there and
-to the export folder you pick (`~/Wyrmrest Exports` in the packaged app).
+This creates both:
 
-Linux (`.AppImage`, `.deb`) and macOS (`.dmg`, `.zip`) targets are configured in the same file —
-`npx electron-builder --linux` / `--mac`. Building for Windows from Linux needs Wine only for the
-installer; `--dir` works without it.
+- `release/WyrmrestEditor-<version>-win-x64-setup.exe` — NSIS installer with a selectable directory.
+- `release/WyrmrestEditor-<version>-win-x64-portable.exe` — portable executable.
+
+On the other platforms, use `npm run package:mac` (Intel + Apple Silicon `.dmg` / `.zip`) or
+`npm run package:linux` (x64 `.AppImage`, `.deb`, `.tar.gz`). `npm run package` chooses your native
+platform. `npm run package:dir` creates an unpacked app for testing. Packaging commands explicitly
+use `--publish never`, so a normal local build does not unexpectedly publish a release.
+
+### Build locally and publish in one command
+
+Install [GitHub CLI](https://cli.github.com/) and sign in on your own machine with `gh auth login`.
+Your account needs repository release permissions. Commit and push your source first; the publisher
+requires a clean working tree and a commit already available in the connected GitHub repository.
+Then, from the repository root:
+
+```bash
+npm ci
+npm run release:local
+```
+
+This typechecks/tests, builds your **native platform's installers**, then creates/publishes the
+versioned release with those files and a platform-specific checksum file. It does not commit, push,
+or switch branches. Other platforms can be added from the *same* source commit. Use the GitHub
+workflow instead when you want all three platforms built together. If uploading fails, rerun the
+same command; it rebuilds before retrying and preserves existing versioned release notes.
+
+### Signing and saved work
+
+Downloads are **unsigned** unless you configure code signing. Windows SmartScreen and macOS
+Gatekeeper may warn or block them; only run builds you trust. Local Windows signing can use
+`CSC_LINK` / `CSC_KEY_PASSWORD`; macOS distribution also needs appropriate Apple signing/notarization.
+The default CI matrix deliberately builds unsigned packages and disables certificate autodiscovery.
+
+The packaged app starts in demo mode if no live connection is configured. Settings and staged work
+live in `~/.wyrmrest` (`WYRMREST_HOME` overrides this); exports default to `~/Wyrmrest Exports`.
+Installing a release does not apply SQL or clear the ledger. Build outputs and installers in `dist/`
+and `release/` are ignored by Git, so do not commit executables to the source repository.
 
 ## Connecting
 
@@ -276,6 +377,7 @@ A toolbar above the grid puts the common spreadsheet-style row operations one cl
 
 | | |
 | --- | --- |
+| `Ctrl/Cmd + Shift + H` | Quick Start (preserves the current workspace) |
 | `Ctrl/Cmd + K` | command palette (jump to any of the 766 tables) |
 | `Ctrl/Cmd + S` / `Ctrl/Cmd + E` | open the export dialog |
 | `Ctrl/Cmd + I` | stage a new empty row |
@@ -292,7 +394,7 @@ A toolbar above the grid puts the common spreadsheet-style row operations one cl
 | `Ctrl/Cmd + N` | add an event row |
 | `/` or `Ctrl/Cmd + F` | search inside the script |
 
-Shortcuts that modify rows are blocked while typing or while a dialog is open. Errors remain
+Shortcuts that modify grid rows are blocked on Quick Start, in the visual script editor, while typing or while a dialog is open. The script editor has its own row shortcuts. Errors remain
 visible until dismissed; failed copies, saves, connections and exports do not report success.
 
 ## Licence

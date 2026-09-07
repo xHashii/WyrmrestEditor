@@ -34,6 +34,7 @@ test.beforeEach(async ({ page, request }) => {
   await request.post('/api/ledger/clear', { data: {} });
   await request.post('/api/settings', { data: { pageSize: 100, profiles: [{ id: 'local', name: 'Local TrinityCore', host: '127.0.0.1', port: 3306, user: 'trinity', password: '', databases: { auth: 'auth', characters: 'characters', world: 'world', hotfixes: 'hotfixes' } }] } });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Creature templates', exact: true }).click();
   await expect(page.locator('.grid-row')).toHaveCount(15);
 });
 
@@ -285,6 +286,8 @@ test('a failed boot exposes the error and Retry brings back the workspace', asyn
   await expect(page.locator('.boot-error')).toHaveText('Service temporarily unavailable');
   await page.unroute('**/api/metadata');
   await page.getByRole('button', { name: 'Retry connection' }).click();
+  await expect(page.getByRole('heading', { name: 'Quick Start', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Creature templates', exact: true }).click();
   await expect(page.locator('.grid-row')).toHaveCount(15);
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { Sidebar } from './components/Sidebar';
 import { TableView } from './components/TableView';
+import { QuickStart } from './components/QuickStart';
 import { DocsPanel } from './components/DocsPanel';
 import { LedgerPanel } from './components/LedgerPanel';
 import { ExportDialog } from './components/ExportDialog';
@@ -13,7 +14,7 @@ import { DATABASES } from '../shared/types';
 import { isDesktop } from './api';
 
 export function App() {
-  const { ready, error, init, status, ledger, showSidebar, showDocs, showLedger, dialog, setDialog, database, pendingMutations } = useStore();
+  const { ready, error, init, status, ledger, showSidebar, showDocs, showLedger, dialog, setDialog, database, pendingMutations, workspaceView, showQuickStart } = useStore();
   const [compact, setCompact] = useState(window.innerWidth <= 900);
 
   useEffect(() => { void init(); }, [init]);
@@ -38,13 +39,14 @@ export function App() {
       const typing = target?.isContentEditable || Boolean(target?.closest?.('input, textarea, select'));
       const s = useStore.getState();
       const key = event.key.toLowerCase();
+      if (command && event.shiftKey && key === 'h') { event.preventDefault(); if (!typing && !s.editing) s.showQuickStart(); return; }
       if (command && key === 'k') { event.preventDefault(); setDialog('palette'); return; }
       if (command && (key === 'e' || key === 's')) {
         event.preventDefault();
         if (!typing && !s.editing) setDialog('export');
         return;
       }
-      if (command && !typing && !s.editing && !s.pendingMutations) {
+      if (command && !typing && !s.editing && !s.pendingMutations && s.workspaceView === 'editor' && s.smart.view !== 'script') {
         if (key === 'i') { event.preventDefault(); void s.addRow(); }
         else if (key === 'd') { event.preventDefault(); void s.duplicateRow(); }
         else if (key === 'delete' || key === 'backspace') { event.preventDefault(); if (s.selected) void s.deleteRow(s.selected.rowKey); }
@@ -63,6 +65,9 @@ export function App() {
       if (document.querySelector('[role="dialog"]') || s.editing || s.pendingMutations) return;
       if (action === 'export') setDialog('export');
       if (action === 'settings') setDialog('connection');
+      if (action === 'quick-start') s.showQuickStart();
+      if (action === 'smartai') void s.openSmartEditor();
+      if (s.workspaceView !== 'editor' || s.smart.view === 'script') return;
       if (action === 'new-row') void s.addRow();
       if (action === 'duplicate-row') void s.duplicateRow();
       if (action === 'delete-row' && s.selected) void s.deleteRow(s.selected.rowKey);
@@ -78,18 +83,20 @@ export function App() {
   const mode = status?.mode ?? 'demo';
   const staged = ledger.length;
   const dbStatus = status?.databases[database];
-  return <div className={`app ${showDocs && !compact ? '' : 'no-docs'} ${showSidebar && !compact ? '' : 'no-sidebar'}`}>
+  const home = workspaceView === 'quick-start';
+  return <div className={`app ${home ? 'home-workspace' : ''} ${showDocs && !compact && !home ? '' : 'no-docs'} ${showSidebar && !compact && !home ? '' : 'no-sidebar'}`}>
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden /><span className="brand-name">Wyrmrest Editor</span><span className="brand-version">3.4.3</span></div>
-      <nav className="db-tabs" aria-label="Databases">{DATABASES.map((db) => <button key={db} className={`db-tab ${db === database ? 'active' : ''}`}
-        aria-current={db === database ? 'page' : undefined} onClick={() => useStore.getState().setDatabase(db)}>{db}</button>)}</nav>
+      <button className={`chip home-button ${home ? 'active' : ''}`} aria-current={home ? 'page' : undefined} onClick={showQuickStart} title="Quick Start (Ctrl/Cmd+Shift+H)">Quick Start</button>
+      <nav className="db-tabs" aria-label="Databases">{DATABASES.map((db) => <button key={db} className={`db-tab ${!home && db === database ? 'active' : ''}`}
+        aria-current={!home && db === database ? 'page' : undefined} onClick={() => useStore.getState().setDatabase(db)}>{db}</button>)}</nav>
       <div className="topbar-spacer" />
       <button className="find-table" onClick={() => setDialog('palette')}>Find table <kbd>Ctrl K</kbd></button>
       <div className="topbar-actions">
         <button className={`chip ${mode === 'live' ? 'chip-live' : 'chip-demo'}`} onClick={() => setDialog('connection')} title="Connection settings">
           <span className="dot" />{mode === 'live' ? 'Live connection' : 'demo data'}</button>
-        <button className="chip panel-toggle" aria-expanded={showSidebar} onClick={() => useStore.setState({ showSidebar: !showSidebar })}>Tables</button>
-        <button className="chip panel-toggle" aria-expanded={showDocs} onClick={() => useStore.setState({ showDocs: !showDocs })}>Inspector</button>
+        {!home && <button className="chip panel-toggle" aria-expanded={showSidebar} onClick={() => useStore.setState({ showSidebar: !showSidebar })}>Tables</button>}
+        {!home && <button className="chip panel-toggle" aria-expanded={showDocs} onClick={() => useStore.setState({ showDocs: !showDocs })}>Inspector</button>}
         <button className={`chip ${staged ? 'chip-staged' : ''}`} aria-expanded={showLedger} onClick={() => useStore.setState({ showLedger: !showLedger })}>
           Staged changes <span className="badge">{staged}</span></button>
         <button className="chip chip-primary" onClick={() => setDialog('export')} disabled={!staged || pendingMutations > 0}>Export SQL</button>
@@ -102,13 +109,13 @@ export function App() {
     </div>
     {status?.warning && <div className="workspace-warning" role="alert"><span>{status.warning}</span><button className="btn btn-quick" onClick={() => setDialog('connection')}>Connection settings</button></div>}
     <div className="body">
-      {showSidebar && !compact && <Sidebar />}
-      <main className="main"><TableView /></main>
-      {showDocs && !compact && <DocsPanel />}
+      {!home && showSidebar && !compact && <Sidebar />}
+      <main className="main">{home ? <QuickStart /> : <TableView />}</main>
+      {!home && showDocs && !compact && <DocsPanel />}
     </div>
     {showLedger && <LedgerPanel />}
-    {showSidebar && compact && <Modal className="panel-drawer" label="Table browser" onClose={() => useStore.setState({ showSidebar: false })}><Sidebar /></Modal>}
-    {showDocs && compact && <Modal className="panel-drawer" label="Inspector" onClose={() => useStore.setState({ showDocs: false })}><DocsPanel /></Modal>}
+    {!home && showSidebar && compact && <Modal className="panel-drawer" label="Table browser" onClose={() => useStore.setState({ showSidebar: false })}><Sidebar /></Modal>}
+    {!home && showDocs && compact && <Modal className="panel-drawer" label="Inspector" onClose={() => useStore.setState({ showDocs: false })}><DocsPanel /></Modal>}
     {dialog === 'export' && <ExportDialog />}
     {dialog === 'connection' && <ConnectionDialog />}
     {dialog === 'palette' && <CommandPalette />}

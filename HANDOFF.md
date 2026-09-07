@@ -1,6 +1,70 @@
 # Wyrmrest Editor — maintenance handoff
 
-## Current state (2026-09-07)
+## Quick Start, text fitting and release automation (2026-09-07)
+
+Implemented on `arena/01a07cc9-wyrmresteditor`. No changes to schema metadata, SQL staging/export
+semantics or connection credentials were required.
+
+- The default launch surface is now **Quick Start**, inspired by WDE's large quick-load shortcuts
+  and recent-item list. SmartAI opens directly into an inline loader (name search + kind filter,
+  or an exact entry/GUID + source type). An empty script can be opened before adding its first event.
+- **Quick Start** remains available in the toolbar, via Ctrl/Cmd+Shift+H, and in the Electron View
+  menu. Returning to the current workspace keeps its filters/script. Hidden-grid shortcuts are
+  blocked; asynchronous navigation cannot reopen an old table/script after returning home.
+- Recent shortcuts live in renderer localStorage (`wyrmrest.recent.v1`), scoped to demo/profile ID,
+  capped at 40 overall (10 shown per current profile), validated on read, and safe to clear without
+  touching the ledger. Storage failures retain a session-only list with a visible explanation.
+- A prominent **Table / SmartAI editor** selector replaces the small grid-tools switch. Long button
+  text, script names/comments, definition constants and parameters wrap; script layouts respond to
+  the pane width (container queries), including when both sidebars are visible. Narrow script lists
+  no longer hide entry IDs or event counts. SmartAI descriptions retain whitespace and omit hidden
+  default parameters instead of gluing `none`/`0` onto adjacent words.
+- The grid's **Expand / edit value** opens its full multiline editor without needing the Inspector.
+  Existing long/multiline text also opens it directly. Dense grid previews remain intentionally
+  compact; full values, originals and all fields remain available in the Inspector. Comments/text
+  parameters wrap in vertically resizable editors. Native enum controls also show their full label.
+- CI still builds Windows x64 setup/portable, macOS x64/arm64 DMG/ZIP and Linux x64 AppImage/DEB/tar.gz.
+  After successful `main` builds, it refreshes a **development prerelease** with those nine assets
+  and SHA-256 checksums. Matching `v<package version>` tags publish versioned releases; a manual
+  `publish: versioned` run on main creates the tag automatically. Other branches/PRs build only.
+- Release publication uses `gh` and the built-in token, with contents:write limited to its job. It
+  checks exact, nonempty artifacts; rejects version/tag/draft-source mismatches; handles annotated
+  tags; keeps new releases drafts until uploads succeed; never moves versioned tags; and prevents
+  older matrix runs from rolling development back. Only development's obsolete managed assets
+  are removed; published versioned notes are preserved on retries.
+- `npm run package:win`, `package:mac`, `package:linux` build locally without publishing.
+  `npm run release:local` checks/builds/publishes the native platform, requiring a clean, pushed source
+  commit and local GitHub CLI authentication. It never commits, pushes or changes branches. README
+  explains the GitHub buttons, version bumps, permissions, signing and unsigned-download warnings.
+
+### Verification for this pass
+
+- `npm run check`: typecheck, both production builds and **108/108** Node/service/store/UI/release tests.
+- Playwright against the built app: **44/44** workflows passed. New cases cover Quick Start,
+  persistence, exact/signed IDs and source kinds, new scripts, retry paths, blocked storage, full-value
+  staging and long unbroken names/comments. Responsive checks include **320, 390, 768, 1024, 1280,
+  1440 and 1600 px** widths. New screens and existing tested states pass axe WCAG A/AA checks.
+- Pinned wiki fetch + full metadata regeneration: clean diff under `resources/metadata`.
+- `npm audit --audit-level=moderate`: **0 vulnerabilities**. Actionlint (WASM): **no findings**.
+- `git diff --check`: clean.
+
+### Not performed / environment limitations
+
+No source was pushed and no GitHub release was created or updated during this pass. The publisher's
+remote operations were verified with controlled `gh` mocks; its workflow must be merged/run to
+produce the new desktop assets. The previously completed GitHub build on main successfully built
+all three installer platforms, but it predates these changes.
+
+`npm run package:dir` built the source successfully, then failed during Electron packaging with a
+TLS/network download error in this sandbox (system CA bundle enabled; TLS verification not bypassed).
+No finished native installer or real MySQL session was tested here. The Playwright CDN was also
+unavailable; browser verification used npm-distributed Chromium 149 at `/tmp/chromium`, with
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/tmp/chromium` and `LD_LIBRARY_PATH=/tmp/al2023/lib`.
+That fallback and screenshots/logs are ignored scratch files, not project dependencies.
+
+---
+
+## Previous reliability pass (2026-09-07)
 
 The reliability and UX pass is implemented on `arena/01a07b1c-wyrmresteditor`. The editor remains a
 TrinityCore **3.4.3** database editor, with the same generated catalogue of **766 tables / 6,997

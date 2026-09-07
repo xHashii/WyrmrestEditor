@@ -220,12 +220,12 @@ export function SmartRowDialog({ row, subject, parentEventLabel, onClose, onStag
           <textarea className="comment-input" rows={2} disabled={readOnly} value={String(values.comment ?? '')} aria-label="Row comment"
             placeholder={row.isComment ? 'Comment shown in the script (this row has no event and no action)' : 'e.g. Hogger - On Aggro - Cast Fireball'}
             onChange={(event) => set('comment', event.target.value)} />
-          {parentEventLabel && !hasEvent && <p className="muted small">Chained to “{parentEventLabel}”{row.link ? ` (row ${row.link})` : ''}.</p>}
+          {parentEventLabel && !hasEvent && <p className="muted small">Chained to “{parentEventLabel}”.{row.link ? ` Continues at row #${row.link}.` : ''}</p>}
         </section>
 
         <section className="smart-section">
           <button className="link-button" aria-expanded={advanced} onClick={() => setAdvanced((open) => !open)}>
-            {advanced ? '▾' : '▸'} Row wiring — id {row.id}{row.link ? `, linked from row ${row.link}` : ''}
+            {advanced ? '▾' : '▸'} Row wiring — id {row.id}{row.link ? `, next row ${row.link}` : ''}
           </button>
           {advanced && (
             <div className="smart-extras">
@@ -238,7 +238,7 @@ export function SmartRowDialog({ row, subject, parentEventLabel, onClose, onStag
                 <input className="param-control" inputMode="numeric" disabled={readOnly} aria-label="Link: id of the row that follows this one"
                   value={String(values.link ?? 0)} onChange={(event) => set('link', /^\d+$/.test(event.target.value.trim()) ? Number(event.target.value.trim()) : 0)} />
               </label>
-              <span className="param-hint">A non-zero <code>link</code> means “this row is a continuation of row N”, which is how one event runs several actions.</span>
+              <span className="param-hint">A non-zero <code>link</code> is the id of the next action row in this chain. A value of 0 ends the chain.</span>
             </div>
           )}
         </section>

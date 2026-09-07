@@ -26,6 +26,7 @@ test.beforeEach(async ({ page, request }) => {
   await request.post('/api/demo', { data: {} });
   await request.post('/api/ledger/clear', { data: {} });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Creature templates', exact: true }).click();
   await expect(page.locator('.grid-row')).toHaveCount(15);
 });
 

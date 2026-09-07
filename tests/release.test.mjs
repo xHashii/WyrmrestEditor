@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { artifactNames, checkArtifacts, checksumFile, releasePlan, validateVersion } from '../scripts/release-utils.mjs';
+import { execFileSync } from 'node:child_process';
+import { artifactNames, checkArtifacts, checksumFile, packageVersion, releasePlan, validateVersion } from '../scripts/release-utils.mjs';
 import { publishRelease } from '../scripts/publish-release.mjs';
 
 const version = '0.2.0';
@@ -30,6 +31,59 @@ test('only main, matching version tags or explicit main dispatches publish', () 
 test('release versions are safe, valid SemVer without ambiguous asset metadata', () => {
   for (const value of ['1.2.3', '0.2.0-beta.1', '12.0.10-rc.0', '1.2.3-foo01']) assert.equal(validateVersion(value), value);
   for (const value of ['v1.2.3', '01.2.3', '1.2', '1.2.3-beta.01', '1.2.3+sha', '1.2.3\nchannel=development', '../x', null]) assert.throws(() => validateVersion(value));
+});
+
+test('installer expectations match electron-builder target expansion on every platform', async () => {
+  // Exercise the installed builder and real YAML, not fixtures generated from
+  // artifactNames itself. This needs no Electron download or native build tools.
+  const { Packager, LinuxPackager, MacPackager, WinPackager, archFromString } = await import('electron-builder');
+  for (const assetVersion of [packageVersion(), '0.3.0-beta.1']) {
+    const info = new Packager({ projectDir: process.cwd(), config: { extraMetadata: { version: assetVersion } } });
+    await info.validateConfig();
+    const allNames = [];
+    for (const [platform, PlatformPackager] of [['linux', LinuxPackager], ['windows', WinPackager], ['macos', MacPackager]]) {
+      const packager = new PlatformPackager(info);
+      const names = packager.platformSpecificBuildOptions.target.flatMap(({ target, arch }) => {
+        const ext = ['nsis', 'portable'].includes(target) ? 'exe' : target;
+        const options = info.config[target === 'AppImage' ? 'appImage' : target];
+        return arch.map((architecture) => packager.expandArtifactNamePattern(options, ext, archFromString(architecture)));
+      }).sort();
+      assert.deepEqual(artifactNames(assetVersion, platform), names, `${platform} installer names for ${assetVersion}`);
+      allNames.push(...names);
+    }
+    assert.deepEqual(artifactNames(assetVersion), allNames.sort());
+  }
+});
+
+test('Linux artifact CLI accepts native names and still rejects missing or empty installers', async (t) => {
+  const assetVersion = packageVersion();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wyrmrest-linux-installers-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  // Independent fixtures reproduce electron-builder's x64 outputs: each format
+  // has its own architecture label, even with an explicit ${arch} pattern.
+  const names = [
+    `WyrmrestEditor-${assetVersion}-linux-amd64.deb`,
+    `WyrmrestEditor-${assetVersion}-linux-x64.tar.gz`,
+    `WyrmrestEditor-${assetVersion}-linux-x86_64.AppImage`,
+  ];
+  const files = names.map((name) => path.join(directory, name));
+  for (const file of files) fs.writeFileSync(file, 'installer fixture');
+  const output = execFileSync(process.execPath, ['scripts/release-utils.mjs', 'check', '--platform', 'linux', '--assets', directory], { encoding: 'utf8' });
+  assert.deepEqual(output.trim().split(/\r?\n/), files);
+  assert.deepEqual(checkArtifacts(directory, assetVersion, 'linux'), files);
+  if (process.platform === 'linux') assert.deepEqual(checkArtifacts(directory, assetVersion, 'native'), files);
+  const checksum = await checksumFile(directory, files, 'linux');
+  assert.deepEqual(fs.readFileSync(checksum, 'utf8').trim().split('\n').map((line) => line.split('  ')[1]), names);
+
+  // Stale x64 aliases must not disguise a missing native AppImage or DEB.
+  for (const ext of ['AppImage', 'deb']) fs.writeFileSync(path.join(directory, `WyrmrestEditor-${assetVersion}-linux-x64.${ext}`), 'wrong name');
+  for (const file of files) {
+    fs.unlinkSync(file);
+    assert.throws(() => checkArtifacts(directory, assetVersion, 'linux'), /Missing or empty installer/);
+    fs.writeFileSync(file, '');
+    assert.throws(() => checkArtifacts(directory, assetVersion, 'linux'), /Missing or empty installer/);
+    fs.writeFileSync(file, 'installer fixture');
+  }
 });
 
 function fixtures(t, platform = 'all', assetVersion = version) {

@@ -62,6 +62,8 @@ linux:
       arch: [x64]
     - target: tar.gz
       arch: [x64]
+  # ${arch} is target-specific: x86_64 (AppImage), amd64 (deb), x64 (tar.gz).
+  # Keep scripts/release-utils.mjs in sync; release tests check this expansion.
   artifactName: WyrmrestEditor-${version}-linux-${arch}.${ext}
 
 publish: null

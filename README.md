@@ -305,6 +305,15 @@ On the other platforms, use `npm run package:mac` (Intel + Apple Silicon `.dmg` 
 platform. `npm run package:dir` creates an unpacked app for testing. Packaging commands explicitly
 use `--publish never`, so a normal local build does not unexpectedly publish a release.
 
+Linux x64 builds use each format's architecture label in the filename:
+
+- `release/WyrmrestEditor-<version>-linux-x86_64.AppImage`
+- `release/WyrmrestEditor-<version>-linux-amd64.deb`
+- `release/WyrmrestEditor-<version>-linux-x64.tar.gz`
+
+All three target the same x64 architecture. Verify them with
+`node scripts/release-utils.mjs check --platform linux`.
+
 ### Build locally and publish in one command
 
 Install [GitHub CLI](https://cli.github.com/) and sign in on your own machine with `gh auth login`.

@@ -34,7 +34,9 @@ export function artifactNames(version, platform = 'all') {
   const prefix = `WyrmrestEditor-${version}`;
   const names = {
     windows: [`${prefix}-win-x64-setup.exe`, `${prefix}-win-x64-portable.exe`],
-    linux: [`${prefix}-linux-x64.AppImage`, `${prefix}-linux-x64.deb`, `${prefix}-linux-x64.tar.gz`],
+    // electron-builder expands ${arch} per target, even for a custom artifactName:
+    // x64 becomes x86_64 for AppImage and amd64 for DEB, but stays x64 for tar.gz.
+    linux: [`${prefix}-linux-x86_64.AppImage`, `${prefix}-linux-amd64.deb`, `${prefix}-linux-x64.tar.gz`],
     macos: ['x64', 'arm64'].flatMap((arch) => [`${prefix}-mac-${arch}.dmg`, `${prefix}-mac-${arch}.zip`]),
   };
   if (platform === 'native') platform = { win32: 'windows', linux: 'linux', darwin: 'macos' }[process.platform];

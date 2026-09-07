@@ -161,7 +161,7 @@ export function DefinitionPicker({ title, subtitle, searchLabel, defs, groups, c
                   {isCurrent && <span className="tag tag-soft tag-mini">current</span>}
                 </span>
                 <span className="definition-note">{def.comment ?? def.description ?? def.name}</span>
-                {def.params.length > 0 && <span className="definition-params">{def.params.slice(0, 4).map((param) => param.label).join(' · ')}{def.params.length > 4 ? ` · +${def.params.length - 4}` : ''}</span>}
+                {def.params.length > 0 && <span className="definition-params">{def.params.map((param) => param.label).join(' · ')}</span>}
               </span>
             </button>
           );
@@ -236,6 +236,7 @@ export function ParamField({ param, meta, value, onChange, disabled, describe = 
       : [];
     return (
       <div className="param-field param-flags">
+        <span className="param-label">{param.label}</span>
         <button className="btn param-pick wide" type="button" disabled={disabled} onClick={() => setFlagOpen(true)}>
           <span className="flags-value">{valueText(value)}</span>
           <span className="flags-names">{labels.length ? labels.join(' · ') : 'no flags set'}</span>
@@ -255,6 +256,7 @@ export function ParamField({ param, meta, value, onChange, disabled, describe = 
           {!known && <option value={String(value ?? '0')}>{`${valueText(value)} (undocumented)`}</option>}
           {options.map((entry) => <option key={String(entry.value)} value={String(entry.value)}>{entry.value} — {entry.name}</option>)}
         </select>
+        <span className="selected-option">{known ? `${valueText(value)} — ${options.find((entry) => String(entry.value) === String(value))!.name}` : `${valueText(value)} (undocumented)`}</span>
         {describe && param.description && <p className="param-hint">{param.description}</p>}
       </label>
     );
@@ -275,9 +277,10 @@ export function ParamField({ param, meta, value, onChange, disabled, describe = 
   return (
     <label className="param-field">
       <span className="param-label">{param.label}</span>
-      <input className="param-control" type={isText ? 'text' : 'text'} inputMode={isText ? undefined : 'numeric'} disabled={disabled}
-        value={value === null ? '' : String(value)} aria-label={param.label}
-        onChange={(event) => set(event.target.value === '' ? (isText ? '' : 0) : event.target.value)} />
+      {isText ? <textarea className="param-control param-text" rows={3} disabled={disabled} value={value == null ? '' : String(value)} aria-label={param.label}
+        onChange={(event) => set(event.target.value)} /> : <input className="param-control" inputMode="numeric" disabled={disabled}
+        value={value == null ? '' : String(value)} aria-label={param.label}
+        onChange={(event) => set(event.target.value === '' ? 0 : event.target.value)} />}
       {describe && param.description && <p className="param-hint">{param.description}</p>}
     </label>
   );

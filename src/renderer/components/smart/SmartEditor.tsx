@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { gridRows, useStore } from '../../store';
 import { DefinitionPicker } from './pickers';
 import { SmartRowDialog } from './RowDialog';
-import { ScriptPicker } from './ScriptPicker';
+import { ScriptPicker, ScriptPickerList } from './ScriptPicker';
 import {
   asNumber, clearedParamValues, newScriptRowValues, scriptEntity, supportedParams, tintFor,
 } from './helpers';
@@ -83,7 +83,7 @@ export function SmartEditor() {
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!meta || entryorguid === null || !smartData) return;
-    const signature = `${script.rows.length}:${rows.map((row) => row.id).join(',')}`;
+    const signature = `${state.sourceToken}:${entryorguid}:${sourceType}:${JSON.stringify(rows.map((row) => row.values))}`;
     if (resolveKey.current === signature) return;
     resolveKey.current = signature;
     const wanted = new Map<string, Set<string>>();
@@ -101,7 +101,7 @@ export function SmartEditor() {
       for (const param of row.target.def?.params ?? []) add(param.entity, row.values[param.column] ?? null);
     }
     for (const [lookup, ids] of wanted) void state.resolveNamesFor(lookup, [...ids]);
-  }, [rows, script, smartData, meta, entryorguid, entity]);
+  }, [rows, script, smartData, meta, entryorguid, sourceType, entity, state.sourceToken]);
 
   const visible = useMemo(() => {
     const query = term.trim().toLowerCase();
@@ -231,10 +231,10 @@ export function SmartEditor() {
   if (!meta || smart.entryorguid === null) {
     return (
       <div className="smart-editor smart-start">
-        <h2>Choose the script you want to edit</h2>
+        <h2>Load a SmartAI script</h2>
         <p className="muted">SmartAI rows are only readable as a whole script: one creature, object or spell and the events it reacts to.
           Search by name — typing <em>Hogger</em> finds entry 448 — or pick a row in the grid view and open it from there.</p>
-        {smartData ? <ScriptPicker /> : <p className="muted"><span className="spinner" /> Loading SmartAI definitions…</p>}
+        {smartData ? <ScriptPickerList /> : <p className="muted"><span className="spinner" /> Loading SmartAI definitions…</p>}
       </div>
     );
   }
@@ -380,7 +380,7 @@ interface EntryProps {
   onDelete(row: SmartRow): Promise<void>;
 }
 
-function ScriptEntry({ entry, index, subject, readOnly, busy, focused, issues, description, contextFor, onFocus, onEdit, onAddAction, onMove, onDelete }: EntryProps) {
+function ScriptEntry({ entry, index, subject, readOnly, busy, focused, issues, hideComments, description, contextFor, onFocus, onEdit, onAddAction, onMove, onDelete }: EntryProps) {
   const tint = tintFor(index);
   const head = entry.head;
   if (entry.kind === 'comment' && !entry.actions.length) {
@@ -404,12 +404,13 @@ function ScriptEntry({ entry, index, subject, readOnly, busy, focused, issues, d
         <SourceCell source={head.action} part="action" row={head} subject={subject} description={description} contextFor={contextFor} onEdit={onEdit} focused={focused === head.rowKey} />
         <RowTools row={head} readOnly={readOnly} busy={busy} onEdit={onEdit} onDelete={onDelete} onMove={onMove} entry={entry} />
       </div>
-      {head.comment && <p className="smart-row-comment">{head.comment}</p>}
+      {!hideComments && head.comment && <button className="smart-row-comment" aria-label={`Edit comment for row ${head.id}`} onClick={() => onEdit(head.rowKey)}>{head.comment}</button>}
       {chained.map((row) => (
         <div className="smart-row-line chained" key={row.rowKey} tabIndex={0} onFocus={() => onFocus(row.rowKey)}>
-          <span className="row-id chain" title={`Linked from row ${row.link}`}>↳ #{row.id}</span>
+          <span className="row-id chain" title={`Linked action #${row.id}${row.link ? ` · continues at row #${row.link}` : ' · end of chain'}`}>↳ #{row.id}</span>
           <SourceCell source={row.action} part="action" row={row} subject={subject} description={description} contextFor={contextFor} onEdit={onEdit} focused={focused === row.rowKey} />
           <RowTools row={row} readOnly={readOnly} busy={busy} onEdit={onEdit} onDelete={onDelete} onMove={onMove} entry={entry} />
+          {!hideComments && row.comment && <button className="smart-row-comment" aria-label={`Edit comment for row ${row.id}`} onClick={() => onEdit(row.rowKey)}>{row.comment}</button>}
         </div>
       ))}
       <button className="btn btn-ghost ghost-add inside" disabled={readOnly || busy} onClick={() => onAddAction(entry)}>+ Add action</button>

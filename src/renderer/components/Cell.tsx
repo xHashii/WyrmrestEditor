@@ -84,7 +84,7 @@ export function Cell({ column, gridRow, value, dirty, selected, style, onSelect 
   if (isEditing && column.editor === 'reference' && column.reference) return <div {...props}>
     <ReferencePicker column={column} value={value} onCancel={cancel} onPick={(next) => void commit(next)} />
   </div>;
-  if (isEditing && ['longtext', 'binary'].includes(column.editor)) return <div {...props}>
+  if (isEditing && (['longtext', 'binary'].includes(column.editor) || (column.kind === 'string' && (String(value ?? '').length > 80 || /[\r\n]/.test(String(value ?? '')))))) return <div {...props}>
     <ValueEditor column={column} value={value} onCancel={cancel} onChange={commit} />
   </div>;
   if (isEditing && column.editor === 'enum' && column.valueSet) return <div {...props}>

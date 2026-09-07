@@ -6,21 +6,41 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish installers (select main when publishing)'
+        type: choice
+        options: [none, development, versioned]
+        default: none
+        required: true
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not interrupt a release halfway through uploading its installers.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')) }}
 
 jobs:
   verify:
     name: metadata + tests
     runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.release-plan.outputs.channel }}
+      tag: ${{ steps.release-plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      - name: Validate version and choose release channel
+        id: release-plan
+        run: node scripts/release-utils.mjs plan
+        env:
+          RELEASE_CHANNEL: ${{ inputs.publish || 'none' }}
 
       - name: Install dependencies
         run: npm ci
@@ -98,8 +118,10 @@ jobs:
       - name: Package desktop installers
         run: npx electron-builder --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Verify every expected installer exists
+        run: node scripts/release-utils.mjs check --platform ${{ matrix.artifact }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -111,22 +133,31 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.tar.gz
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
   release:
-    name: publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: installers
+    name: publish ${{ needs.verify.outputs.channel }} release
+    if: needs.verify.outputs.channel != 'none'
+    needs: [verify, installers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ needs.verify.outputs.tag }}
+      cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
+          pattern: wyrmrest-editor-*
           path: artifacts
-      - name: Publish
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*
-          generate_release_notes: true
+          merge-multiple: true
+      - name: Publish installers and SHA-256 checksums
+        run: node scripts/publish-release.mjs --channel "$RELEASE_CHANNEL" --assets artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_CHANNEL: ${{ needs.verify.outputs.channel }}

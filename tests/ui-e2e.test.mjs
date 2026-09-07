@@ -104,6 +104,9 @@ async function boot(t, port) {
   window.eval(bundle);
   const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
   await settle(2500);
+  assert.ok(window.document.querySelector('.quick-start'), 'Quick Start is the launch screen');
+  window.document.querySelector('[data-quick-table="creature_template"]').click();
+  await settle(700);
   return { window, doc: window.document, settle, base, exportRoot, errors };
 }
 
